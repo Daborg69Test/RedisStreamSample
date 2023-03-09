@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ByteSizeLib;
 using Microsoft.Extensions.Logging;
 using MQSample_Common;
 using ProducerApp;
@@ -14,23 +15,22 @@ using Spectre.Console;
 
 namespace ProducerApp;
 
-
 internal class FlightProducerEngine
 {
-    private string _streamName;
+    private          string                        _streamName;
     private readonly ILogger<FlightProducerEngine> _logger;
-    private IServiceProvider _serviceProvider;
-    private IFlightProducer _producer;
+    private          IServiceProvider              _serviceProvider;
+    private          IFlightProducer               _producer;
 
     private string _flightDay;
-    
+
 
 
     public FlightProducerEngine(ILogger<FlightProducerEngine> logger, IServiceProvider serviceProvider)
     {
-        _logger = logger;
+        _logger          = logger;
         _serviceProvider = serviceProvider;
-        _streamName = "MQStreamSample.Flights";
+        _streamName      = "MQStreamSample.Flights";
     }
 
 
@@ -46,9 +46,9 @@ internal class FlightProducerEngine
 
 
         // 2 GB max, 200MB segments, 36 hours
-        await _producer.SetStreamLimits(2000, 200, 36);
+        _producer.SetStreamLimits(ByteSize.FromMegaBytes(200), ByteSize.FromMegaBytes(20), TimeSpan.FromHours(12));
 
-        _producer.MessageConfirmationError += MessageConfirmationError;
+        _producer.MessageConfirmationError   += MessageConfirmationError;
         _producer.MessageConfirmationSuccess += MessageConfirmationSuccess;
 
         Stats = new Stats(_streamName);
@@ -57,10 +57,7 @@ internal class FlightProducerEngine
     }
 
 
-    public async Task StopEngine()
-    {
-        await _producer.Stop();
-    }
+    public async Task StopEngine() { await _producer.Stop(); }
 
     public Stats Stats { get; set; }
 
@@ -68,7 +65,7 @@ internal class FlightProducerEngine
     /// <summary>
     /// The number of messages that should be produced per batch
     /// </summary>
-    public short FlightsPerDay{ get; set; } = 6;
+    public short FlightsPerDay { get; set; } = 6;
 
 
     /// <summary>
@@ -94,9 +91,9 @@ internal class FlightProducerEngine
                 // Publish the messages
                 for (short i = 0; i < FlightsPerDay; i++)
                 {
-                    string fullBatchId = _flightDay + i;
-                    string msg = String.Format($"Id: {i} ");
-                    Message message = producer.CreateMessage(msg);
+                    string  fullBatchId = _flightDay + i;
+                    string  msg         = String.Format($"Id: {i} ");
+                    Message message     = producer.CreateMessage(msg);
 
                     string fullBatch = _flightDay.ToString() + i.ToString();
                     message.ApplicationProperties.Add(SampleCommon.AP_DAY, fullBatch);
@@ -105,22 +102,28 @@ internal class FlightProducerEngine
                     Stats.CreatedMessages++;
 
                     if (!producer.CircuitBreakerTripped)
-                        await producer.SendMessage(message);
+                        await producer.SendMessageAsync(message);
                     else
                     {
                         bool keepTrying = true;
                         while (keepTrying)
                         {
-                            if (producer.IsCancelled) return;
-                            if (producer.CircuitBreakerTripped) Thread.Sleep(2000);
-                            else await producer.SendMessage(message);
+                            if (producer.IsCancelled)
+                                return;
+
+                            if (producer.CircuitBreakerTripped)
+                                Thread.Sleep(2000);
+                            else
+                                await producer.SendMessageAsync(message);
                         }
                     }
 
-                    if (producer.IsCancelled) return;
+                    if (producer.IsCancelled)
+                        return;
                 }
 
                 _flightDay = HelperFunctions.NextFlightDay(_flightDay);
+
                 //DisplayStats.Refresh();
                 Thread.Sleep(WaitBetweenDays * 1000);
             }
@@ -134,23 +137,19 @@ internal class FlightProducerEngine
     {
         Stats.FailureMessages++;
 
-        bool success = e.Status == ConfirmationStatus.Confirmed ? true : false;
-        string flightDay = (string)e.Message.ApplicationProperties[SampleCommon.AP_DAY];
+        bool   success         = e.Status == ConfirmationStatus.Confirmed ? true : false;
+        string flightDay       = (string)e.Message.ApplicationProperties[SampleCommon.AP_DAY];
         string flightDaymethod = HelperFunctions.GetFlightDay(e);
 
         AnsiConsole.Markup($"[red] Error sending Flight data for {flightDay}[/]");
-
-        
     }
 
 
     private void MessageConfirmationSuccess(object sender, MessageConfirmationEventArgs e)
     {
         string flightDay = HelperFunctions.GetFlightDay(e);
-        bool success = e.Status == ConfirmationStatus.Confirmed ? true : false;
+        bool   success   = e.Status == ConfirmationStatus.Confirmed ? true : false;
 
         Stats.SuccessMessages++;
     }
-
-
 }

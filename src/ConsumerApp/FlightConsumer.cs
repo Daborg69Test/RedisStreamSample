@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SlugEnt.StreamProcessor;
 
 namespace ConsumerApp;
@@ -9,17 +10,12 @@ public interface IFlightConsumer : IMqStreamConsumer
 }
 
 
-
-public class FlightConsumer :MqStreamConsumer, IFlightConsumer  
+public class FlightConsumer : MqStreamConsumer, IFlightConsumer
 {
-
     //private Func<Message, Task<bool>> _consumptionHandler;
     private ILogger<FlightConsumer> _logger;
 
-    public FlightConsumer(ILogger<FlightConsumer> logger) : base(logger)
-    {
-        _logger = logger;
-    }
+    public FlightConsumer(ILogger<FlightConsumer> logger, ServiceProvider serviceProvider) : base(logger, serviceProvider) { _logger = logger; }
 
 
 

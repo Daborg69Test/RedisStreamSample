@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -21,6 +21,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\FlightLibrary\FlightLibrary.csproj" />
 		<ProjectReference Include="..\MQSample_Common\MQSample_Common.csproj" />
 	</ItemGroup>
 

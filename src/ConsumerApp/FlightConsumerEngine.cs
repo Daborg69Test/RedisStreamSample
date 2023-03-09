@@ -13,10 +13,10 @@ namespace ConsumerApp;
 
 public class FlightConsumerEngine
 {
-    private string _streamName;
-    private readonly ILogger _logger;
-    private IServiceProvider _serviceProvider;
-    private IFlightConsumer _consumer;
+    private          string           _streamName;
+    private readonly ILogger          _logger;
+    private          IServiceProvider _serviceProvider;
+    private          IFlightConsumer  _consumer;
 
     private string _flightDay;
 
@@ -24,9 +24,9 @@ public class FlightConsumerEngine
 
     public FlightConsumerEngine(ILogger<FlightConsumerEngine> logger, IServiceProvider serviceProvider)
     {
-        _logger = logger;
+        _logger          = logger;
         _serviceProvider = serviceProvider;
-        _streamName = "MQStreamSample.Flights";
+        _streamName      = "MQStreamSample.Flights";
     }
 
 
@@ -34,7 +34,6 @@ public class FlightConsumerEngine
     public async Task StartEngine()
     {
         StreamSystemConfig config = HelperFunctions.GetStreamSystemConfig();
-
 
 
         _consumer = _serviceProvider.GetService<IFlightConsumer>();
@@ -49,20 +48,17 @@ public class FlightConsumerEngine
 
 
 
-
     public async Task StopEngine()
     {
         //await _consumer.Stop();
     }
 
+
     public Stats Stats { get; set; }
 
 
 
-    private void OnEventCheckPointSaved(object sender, MqStreamCheckPointEventArgs e)
-    {
-        Stats.ConsumeLastCheckpoint = e.CommittedOffset;
-    }
+    private void OnEventCheckPointSaved(object sender, MqStreamCheckPointEventArgs e) { Stats.ConsumeLastCheckpoint = e.CommittedOffset; }
 
 
     /// <summary>
@@ -74,11 +70,12 @@ public class FlightConsumerEngine
     {
         Stats.ConsumedMessages++;
         Stats.ConsumeLastBatchReceived = (string)message.ApplicationProperties[SampleCommon.AP_DAY];
+
         //        _statsList[1].ConsumeLastCheckpoint = _consumerB_slow.CheckpointLastOffset;
         Stats.ConsumeCurrentAwaitingCheckpoint = _consumer.CheckpointOffsetCounter;
+
         // Simulate slow
         Thread.Sleep(1500);
         return true;
     }
 }
-

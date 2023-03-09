@@ -5,9 +5,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ProducerApp;
-
 
 /// <summary>
 /// Interface for FlightProducer
@@ -17,9 +17,7 @@ internal interface IFlightProducer : IMqStreamProducer
     public Task StartAsync();
     public Task Stop();
     public void SetProducerMethod(Func<FlightProducer, Task> method);
-
 }
-
 
 
 /// <summary>
@@ -27,71 +25,60 @@ internal interface IFlightProducer : IMqStreamProducer
 /// </summary>
 internal class FlightProducer : MqStreamProducer, IMqStreamProducer, IFlightProducer
 {
-private Func<FlightProducer, Task> _produceMessagesMethod;
-private Thread _workerThread;
+    private Func<FlightProducer, Task> _produceMessagesMethod;
+    private Thread                     _workerThread;
 
 
 
-/// <summary>
-/// Constructor
-/// </summary>
-/// <param name="mqStreamName"></param>
-/// <param name="appName"></param>
-/// <param name="produceMessagesMethod">Method that should be called to produce messages</param>
-public FlightProducer(ILogger<FlightProducer> logger) : base(logger)
-{
-}
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name="mqStreamName"></param>
+    /// <param name="appName"></param>
+    /// <param name="produceMessagesMethod">Method that should be called to produce messages</param>
+    public FlightProducer(ILogger<FlightProducer> logger, ServiceProvider serviceProvider) : base(logger, serviceProvider) { }
 
 
 
-public void SetProducerMethod(Func<FlightProducer, Task> method)
-{
-    _produceMessagesMethod = method;
-}
+    public void SetProducerMethod(Func<FlightProducer, Task> method) { _produceMessagesMethod = method; }
 
 
 
-/// <summary>
-/// Initiates the startup of the Producer, establishes connection to RabbitMQ
-/// </summary>
-/// <returns></returns>
-public async Task StartAsync()
-{
-    await ConnectAsync();
-    await base.StartAsync();
+    /// <summary>
+    /// Initiates the startup of the Producer, establishes connection to RabbitMQ
+    /// </summary>
+    /// <returns></returns>
+    public async Task StartAsync()
+    {
+        await ConnectAsync();
+        await base.StartAsync();
 
-    _workerThread = new Thread(ProduceMessages);
-    _workerThread.Start();
-}
-
-
-public async Task Stop()
-{
-    IsCancelled = true;
-
-    // Print Final Totals
-    System.Console.WriteLine("Messages:");
-    System.Console.WriteLine($"  Produced:    {MessageCounter}");
-}
+        _workerThread = new Thread(ProduceMessages);
+        _workerThread.Start();
+    }
 
 
+    public async Task Stop()
+    {
+        IsCancelled = true;
+
+        // Print Final Totals
+        System.Console.WriteLine("Messages:");
+        System.Console.WriteLine($"  Produced:    {MessageCounter}");
+    }
 
 
 
-/// <summary>
-/// Calls the method to produce messages.  That method does not return until done.
-/// </summary>
-/// <param name="worker"></param>
-private void ProduceMessages()
-{
-    _produceMessagesMethod(this);
-}
+    /// <summary>
+    /// Calls the method to produce messages.  That method does not return until done.
+    /// </summary>
+    /// <param name="worker"></param>
+    private void ProduceMessages() { _produceMessagesMethod(this); }
 
 
 
-
-/// <summary>
-/// When set to true the producing method from the caller should stop processing
-/// </summary>
-public bool IsCancelled { get; protected set; }
+    /// <summary>
+    /// When set to true the producing method from the caller should stop processing
+    /// </summary>
+    public bool IsCancelled { get; protected set; }
 }
