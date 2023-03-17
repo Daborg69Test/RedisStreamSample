@@ -1,16 +1,10 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using RabbitMQ.Stream.Client;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using ByteSizeLib;
+﻿using ByteSizeLib;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MQSample_Common;
-using ProducerApp;
-using SlugEnt.StreamProcessor;
+using RabbitMQ.Stream.Client;
 using RabbitMQ.Stream.Client.Reliable;
+using SlugEnt.MQStreamProcessor;
 using Spectre.Console;
 
 namespace ProducerApp;

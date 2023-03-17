@@ -25,7 +25,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\FlightLibrary\FlightLibrary.csproj" />
-		<ProjectReference Include="..\MQSample_Common\MQSample_Common.csproj" />
+	  <ProjectReference Include="..\FlightLibrary\FlightLibrary.csproj" />
+	  <ProjectReference Include="..\MQSample_Common\MQSample_Common.csproj" />
 	</ItemGroup>
 </Project>

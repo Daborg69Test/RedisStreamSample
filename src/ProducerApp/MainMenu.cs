@@ -1,30 +1,25 @@
 ﻿using Microsoft.Extensions.Logging;
-using SlugEnt.StreamProcessor;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using MQSample_Common;
+using SlugEnt.MQStreamProcessor;
 using Spectre.Console;
 
 namespace ProducerApp;
 
 public class MainMenu
 {
-    private readonly ILogger _logger;
-    private IServiceProvider _serviceProvider;
-    private bool _started;
-    private string _streamName = "";
-    private IMqStreamProducer _producer = null;
+    private readonly ILogger           _logger;
+    private          IServiceProvider  _serviceProvider;
+    private          bool              _started;
+    private          string            _streamName = "";
+    private          IMqStreamProducer _producer   = null;
 
     private FlightProducerEngine _flightProducerEngine;
-    private DisplayStats _displayStats;
+    private DisplayStats         _displayStats;
 
 
     public MainMenu(ILogger<MainMenu> logger, IServiceProvider serviceProvider)
     {
-        _logger = logger;
+        _logger          = logger;
         _serviceProvider = serviceProvider;
     }
 
@@ -40,10 +35,10 @@ public class MainMenu
             if (Console.KeyAvailable)
             {
                 keepProcessing = await ProcessUserInput();
-                
             }
-            else 
+            else
                 Thread.Sleep(1000);
+
             Display();
         }
     }
@@ -52,13 +47,13 @@ public class MainMenu
 
     internal void Display()
     {
-
         string engineStatus = _started == true ? "Running" : "Stopped";
         AnsiConsole.WriteLine($" Engine is currently {engineStatus}");
         AnsiConsole.WriteLine();
         Console.WriteLine(" ( S ) StartAsync / Stop Producing Flights");
         Console.WriteLine();
-        if (_displayStats != null ) _displayStats.Refresh();
+        if (_displayStats != null)
+            _displayStats.Refresh();
     }
 
 
@@ -79,7 +74,7 @@ public class MainMenu
                     if (!_started)
                     {
                         // StartAsync the engine
-                        _flightProducerEngine = (FlightProducerEngine)_serviceProvider.GetService(typeof(FlightProducerEngine));
+                        _flightProducerEngine                 = (FlightProducerEngine)_serviceProvider.GetService(typeof(FlightProducerEngine));
                         _flightProducerEngine.WaitBetweenDays = 30;
                         await _flightProducerEngine.StartEngine();
                         _displayStats = new DisplayStats(_flightProducerEngine.Stats);
@@ -88,19 +83,18 @@ public class MainMenu
                     {
                         // Stop the engine
                         await _flightProducerEngine.StopEngine();
+
                         // TODO Dispose it in future.
                         _flightProducerEngine = null;
                     }
+
                     _started = !_started;
                     break;
 
-                case ConsoleKey.X:
-                    return false;
+                case ConsoleKey.X: return false;
             }
-
         }
 
         return true;
     }
 }
-

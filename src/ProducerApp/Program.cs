@@ -11,14 +11,13 @@ using System.Text;
 using System.Text.Json;
 using RabbitMQ.Stream.Client;
 using RabbitMQ.Stream.Client.Reliable;
-using SlugEnt.StreamProcessor;
+using SlugEnt.MQStreamProcessor;
 using System.Xml.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ProducerApp;
 using Serilog;
 using Serilog.Events;
-using SlugEnt.StreamProcessor;
 
 
 
@@ -26,32 +25,30 @@ public class Program
 {
     static async Task Main(string[] args)
     {
-
         Serilog.ILogger Logger;
         Log.Logger = new LoggerConfiguration()
 #if DEBUG
-            .MinimumLevel.Debug()
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                     .MinimumLevel.Debug()
+                     .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
 #else
 						 .MinimumLevel.Information()
 			             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
 #endif
-            .Enrich.FromLogContext()
-            .WriteTo.Console()
-            .WriteTo.Debug()
-            .CreateLogger();
+                     .Enrich.FromLogContext()
+                     .WriteTo.Console()
+                     .WriteTo.Debug()
+                     .CreateLogger();
 
         Log.Debug("Starting " + Assembly.GetEntryAssembly().FullName);
 
 
-
-        var host = CreateHostBuilder(args).Build();
+        var      host     = CreateHostBuilder(args).Build();
         MainMenu mainMenu = host.Services.GetService<MainMenu>();
         await host.StartAsync();
 
         await mainMenu.Start();
 
-        return; 
+        return;
     }
 
 
@@ -76,10 +73,8 @@ public class Program
                 logging.AddSerilog();
                 logging.AddDebug();
                 logging.AddConsole();
+
                 //logging.AddSimpleConsole(options => options.IncludeScopes = true);
                 //logging.AddEventLog();
             });
-
 }
-
-

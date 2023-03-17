@@ -11,18 +11,20 @@ using StackExchange.Redis.Extensions.Core.Configuration;
 using StackExchange.Redis.Extensions.Core.Implementations;
 using StackExchange.Redis.Extensions.Newtonsoft;
 
+
 namespace FlightOps;
 
-public class FlightOperationsEngine
+public class FlightInfoEngine
 {
-    private          string                _streamFlightOpsName;
+    public static readonly  string TaskName_FlightCreation = "Create Flight";
+    private static readonly string REDIS_FLIGHT_NUMBER     = "FlightInfo.FlightNumber";
+
     private          string                _streamFlightInfoName;
     private readonly ILogger               _logger;
     private          IServiceProvider      _serviceProvider;
     private          IMQStreamEngine       _mqStreamEngine;
-    private          IMqStreamProducer     _flightOpsProducer;
     private          IMqStreamProducer     _flightInfoProducer;
-    private          string                _appName                  = "FlightOps";
+    private          string                _appName                  = "FlightInfoService";
     private          bool                  _circuitBreakerTripped    = false;
     private          int                   _circuitBreakerTimeOut    = 1;
     private          int                   _circuitBreakerMaxTimeout = 180;
@@ -31,20 +33,23 @@ public class FlightOperationsEngine
     private          Thread                _processingThread;
     private          bool                  _stopProcessing = false;
     private          InternalTaskScheduler _internalTaskScheduler;
+    private          long                  _nextFlightID = 1;
 
     private RedisLocker                _redisLocker;
     private RedisConnectionPoolManager _redisConnectionPoolManager;
     private RedisClient                _redisClient;
 
+
     private TimeSpan _redisCacheExpireTimeSpan;
 
 
-    public FlightOperationsEngine(ILogger<FlightOperationsEngine> logger, IServiceProvider serviceProvider)
+#region "BasicEngineStuff"
+
+    public FlightInfoEngine(ILogger<FlightInfoEngine> logger, IServiceProvider serviceProvider)
     {
         _logger = logger;
 
         _serviceProvider       = serviceProvider;
-        _streamFlightOpsName   = FlightConstants.STREAM_FLIGHT_OPS;
         _streamFlightInfoName  = FlightConstants.STREAM_FLIGHT_INFO;
         _internalTaskScheduler = new InternalTaskScheduler();
 
@@ -63,9 +68,9 @@ public class FlightOperationsEngine
         RedisConfiguration redisConfig = new()
         {
             Hosts          = new[] { new RedisHost { Host = "podmanc.slug.local", Port = 6379 } },
-            Password       = "redis123",
-            ConnectTimeout = 1000,
-            SyncTimeout    = 900,
+            Password       = "redis23",
+            ConnectTimeout = 2000,
+            SyncTimeout    = 2000,
             AllowAdmin     = true // Enable admin mode to allow flushing of the database
         };
 
@@ -73,8 +78,45 @@ public class FlightOperationsEngine
         _redisConnectionPoolManager = new RedisConnectionPoolManager(redisConfig);
         NewtonsoftSerializer serializer = new();
         _redisClient = new RedisClient(_redisConnectionPoolManager, serializer, redisConfig);
+        GetNextFlightNumberFromRedis();
     }
 
+
+    public async Task<long> GetNextFlightNumberFromRedis()
+    {
+        try
+        {
+            long value = -1;
+            if (await _redisClient.Db0.ExistsAsync(REDIS_FLIGHT_NUMBER))
+                value = await _redisClient.Db0.GetAsync<long>(REDIS_FLIGHT_NUMBER);
+
+            _nextFlightID = value;
+            return value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Failed to retrieve Flight Number from Redis DB.  Error: {ex.Message}", ex);
+            return -1;
+        }
+    }
+
+
+    /// <summary>
+    /// Increases the next flight number and stores in redis.
+    /// </summary>
+    /// <returns></returns>
+    public async Task<long> SetNextFlightNumber()
+    {
+        _nextFlightID++;
+        await _redisClient.Db0.AddAsync<long>(REDIS_FLIGHT_NUMBER, _nextFlightID);
+        return _nextFlightID;
+    }
+
+
+    public long NextFlightNumber
+    {
+        get { return _nextFlightID; }
+    }
 
 
     /// <summary>
@@ -83,18 +125,20 @@ public class FlightOperationsEngine
     /// <returns></returns>
     public async Task StartEngineAsync()
     {
-        // Read the last Flight ID 
+        if (_nextFlightID == -1)
+        {
+            _nextFlightID = 0;
+            await SetNextFlightNumber();
+        }
 
         StreamSystemConfig config = HelperFunctions.GetStreamSystemConfig();
         _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
         _mqStreamEngine.StreamSystemConfig = config;
 
 
-        _flightOpsProducer  = _mqStreamEngine.GetProducer(_streamFlightOpsName, _appName);
         _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
 
         // Create the stream if it does not exist.
-        _flightOpsProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
         _flightInfoProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
         await _mqStreamEngine.StartAllStreamsAsync();
 
@@ -102,7 +146,7 @@ public class FlightOperationsEngine
         _processingThread.Start();
 
         // Setup Scheduled Tasks
-        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Flight", AddScheduledFlight, TimeSpan.FromSeconds(10)));
+        _internalTaskScheduler.AddTask(new InternalScheduledTask(TaskName_FlightCreation, CreateScheduledFlight, TimeSpan.FromSeconds(10)));
     }
 
 
@@ -113,7 +157,8 @@ public class FlightOperationsEngine
     /// <returns></returns>
     public async Task StopEngineAsync()
     {
-        await _mqStreamEngine.StopAllAsync();
+        if (_mqStreamEngine != null)
+            await _mqStreamEngine.StopAllAsync();
         _stopProcessing = true;
     }
 
@@ -178,6 +223,27 @@ public class FlightOperationsEngine
         return false;
     }
 
+#endregion
+
+
+    /// <summary>
+    /// Sets how often flights are created.
+    /// </summary>
+    /// <param name="seconds"></param>
+    public void SetFlightCreationInterval(int seconds)
+    {
+        InternalScheduledTask t = _internalTaskScheduler.GetTask(TaskName_FlightCreation);
+        if (t == null)
+        {
+            Console.WriteLine("Unable to find the Flight Creation Task Name.  Flight Creation Interval remains at current value");
+            return;
+        }
+
+        t.RunInterval = TimeSpan.FromSeconds(seconds);
+    }
+
+
+    public void DeleteStream() { _flightInfoProducer.DeleteStreamFromRabbitMQ(); }
 
 
     /// <summary>
@@ -185,7 +251,7 @@ public class FlightOperationsEngine
     /// </summary>
     /// <param name="internalScheduledTask"></param>
     /// <returns></returns>
-    private async Task<EnumInternalTaskReturn> AddScheduledFlight(InternalScheduledTask internalScheduledTask)
+    private async Task<EnumInternalTaskReturn> CreateScheduledFlight(InternalScheduledTask internalScheduledTask)
     {
         // If circuit Breaker still tripped, then return without running task.
         if (CheckCircuitBreaker())
@@ -193,11 +259,18 @@ public class FlightOperationsEngine
             return EnumInternalTaskReturn.NotRun;
         }
 
-        Message message = _flightOpsProducer.CreateMessage("hello to you");
+        // Create a flight
+        long   fltnum = await SetNextFlightNumber();
+        Flight flight = new Flight(fltnum);
+
+        Message message = _flightInfoProducer.CreateMessage(flight);
         message.Properties.ReplyTo = "scott";
-        message.ApplicationProperties.Add("Type", "test");
-        message.ApplicationProperties.Add("Id", _messageId);
-        bool success = await _flightOpsProducer.SendMessageAsync(message);
+
+        message.AddApplicationProperty(FlightConstants.MQ_EVENT_CATEGORY, EnumMessageEvents.FlightInfo);
+        message.AddApplicationProperty(FlightConstants.MQ_EVENT_NAME, "FlightCreated");
+        message.AddApplicationProperty(FlightConstants.MQ_EVENT_ID, flight.Id);
+
+        bool success = await _flightInfoProducer.SendMessageAsync(message);
 
         return EnumInternalTaskReturn.Success;
     }

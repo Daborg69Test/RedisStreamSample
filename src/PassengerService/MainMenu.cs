@@ -14,8 +14,8 @@ public class MainMenu
     private          string            _streamName = "";
     private          IMqStreamProducer _producer   = null;
 
-    private FlightOperationsEngine _flightOperationsEngine;
-    private DisplayStats           _displayStats;
+    private DisplayStats    _displayStats;
+    private PassengerEngine _passengerEngine;
 
 
     public MainMenu(ILogger<MainMenu> logger, IServiceProvider serviceProvider)
@@ -40,7 +40,7 @@ public class MainMenu
             else
                 Thread.Sleep(1000);
 
-            //Display();
+            Display();
         }
     }
 
@@ -58,11 +58,6 @@ public class MainMenu
     }
 
 
-
-    /// <summary>
-    /// Processes user input.  Returns True, if we should keep processing.  False if user choose to exit.
-    /// </summary>
-    /// <returns></returns>
     internal async Task<bool> MainMenuUserInput()
     {
         if (Console.KeyAvailable)
@@ -75,10 +70,10 @@ public class MainMenu
                     if (!_started)
                     {
                         // Start the engine
-                        _flightOperationsEngine = _serviceProvider.GetService<FlightOperationsEngine>();
+                        _passengerEngine = _serviceProvider.GetService<PassengerEngine>();
                         try
                         {
-                            await _flightOperationsEngine.StartEngineAsync();
+                            await _passengerEngine.StartEngineAsync();
 
                             //ProcessingLoop();
                         }
@@ -87,22 +82,22 @@ public class MainMenu
                             _logger.LogError(ex, ex.ToString());
                         }
 
-//                        _displayStats = new DisplayStats(_flightOperationsEngine.Stats);
+                        //                        _displayStats = new DisplayStats(_passengerEngine.Stats);
                     }
                     else if (_started)
                     {
                         // Stop the engine
-                        await _flightOperationsEngine.StopEngineAsync();
+                        await _passengerEngine.StopEngineAsync();
 
                         // TODO Dispose it in future.
-                        _flightOperationsEngine = null;
+                        _passengerEngine = null;
                     }
 
                     _started = !_started;
                     break;
 
                 case ConsoleKey.X:
-                    await _flightOperationsEngine.StopEngineAsync();
+                    await _passengerEngine.StopEngineAsync();
                     return false;
             }
         }
@@ -117,7 +112,7 @@ public class MainMenu
     /// </summary>
     internal void ProcessingLoop()
     {
-        _flightOperationsEngine.StartEngineAsync();
+        _passengerEngine.StartEngineAsync();
 
         bool continueProcessing = true;
         while (continueProcessing)

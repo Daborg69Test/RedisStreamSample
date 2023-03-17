@@ -5,13 +5,12 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using RabbitMQ.Stream.Client;
-using SlugEnt.StreamProcessor;
+using SlugEnt.MQStreamProcessor;
 
 namespace MQSample_Common
 {
     public static class HelperFunctions
     {
-
         /// <summary>
         /// Used to create incrementing Flight days with letter naming.  So, A, Z, AAC, FRZ
         /// </summary>
@@ -19,11 +18,11 @@ namespace MQSample_Common
         /// <returns></returns>
         public static string NextFlightDay(string currentDayCode)
         {
-            byte z = (byte)'Z';
+            byte   z            = (byte)'Z';
             byte[] flightDayIDs = Encoding.ASCII.GetBytes(currentDayCode);
 
-            int lastIndex = flightDayIDs.Length - 1;
-            int currentIndex = lastIndex;
+            int  lastIndex       = flightDayIDs.Length - 1;
+            int  currentIndex    = lastIndex;
             bool continueLooping = true;
 
             while (continueLooping)
@@ -61,14 +60,15 @@ namespace MQSample_Common
         /// </summary>
         /// <param name="e"></param>
         /// <returns></returns>
-        public static string GetFlightDay (MessageConfirmationEventArgs e)
+        public static string GetFlightDay(MessageConfirmationEventArgs e)
         {
             string flightDay = "";
             if (e.Message.ApplicationProperties.ContainsKey(SampleCommon.AP_DAY))
             {
                 flightDay = (string)e.Message.ApplicationProperties[SampleCommon.AP_DAY];
             }
-            else flightDay = "Not Specified";
+            else
+                flightDay = "Not Specified";
 
             return flightDay;
         }
@@ -81,22 +81,15 @@ namespace MQSample_Common
         /// <returns></returns>
         public static StreamSystemConfig GetStreamSystemConfig()
         {
-            IPEndPoint a = SlugEnt.StreamProcessor.Helpers.GetIPEndPointFromHostName("rabbitmqa.slug.local", 5552);
-            IPEndPoint b = SlugEnt.StreamProcessor.Helpers.GetIPEndPointFromHostName("rabbitmqb.slug.local", 5552);
-            IPEndPoint c = SlugEnt.StreamProcessor.Helpers.GetIPEndPointFromHostName("rabbitmqc.slug.local", 5552);
+            IPEndPoint a = Helpers.GetIPEndPointFromHostName("rabbitmqa.slug.local", 5552);
+            IPEndPoint b = Helpers.GetIPEndPointFromHostName("rabbitmqb.slug.local", 5552);
+            IPEndPoint c = Helpers.GetIPEndPointFromHostName("rabbitmqc.slug.local", 5552);
 
             StreamSystemConfig config = new StreamSystemConfig
             {
-                UserName = "testUser",
-                Password = "TESTUSER",
-                VirtualHost = "Test",
-                Endpoints = new List<EndPoint> {
-                    a,b,c
-                },
+                UserName = "testUser", Password = "TESTUSER", VirtualHost = "Test", Endpoints = new List<EndPoint> { a, b, c },
             };
             return config;
         }
-
-
     }
 }

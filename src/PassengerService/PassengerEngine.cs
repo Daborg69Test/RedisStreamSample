@@ -11,18 +11,20 @@ using StackExchange.Redis.Extensions.Core.Configuration;
 using StackExchange.Redis.Extensions.Core.Implementations;
 using StackExchange.Redis.Extensions.Newtonsoft;
 
+
 namespace FlightOps;
 
-public class FlightOperationsEngine
+public class PassengerEngine
 {
-    private          string                _streamFlightOpsName;
+    private          string                _streamPassengerName;
     private          string                _streamFlightInfoName;
     private readonly ILogger               _logger;
     private          IServiceProvider      _serviceProvider;
     private          IMQStreamEngine       _mqStreamEngine;
-    private          IMqStreamProducer     _flightOpsProducer;
-    private          IMqStreamProducer     _flightInfoProducer;
-    private          string                _appName                  = "FlightOps";
+    private          IMqStreamProducer     _passengerProducer;
+    private          IMqStreamConsumer     _passengerConsumer;
+    private          IMqStreamConsumer     _flightInfoConsumer;
+    private          string                _appName                  = "Passenger.App";
     private          bool                  _circuitBreakerTripped    = false;
     private          int                   _circuitBreakerTimeOut    = 1;
     private          int                   _circuitBreakerMaxTimeout = 180;
@@ -39,12 +41,12 @@ public class FlightOperationsEngine
     private TimeSpan _redisCacheExpireTimeSpan;
 
 
-    public FlightOperationsEngine(ILogger<FlightOperationsEngine> logger, IServiceProvider serviceProvider)
+    public PassengerEngine(ILogger<PassengerEngine> logger, IServiceProvider serviceProvider)
     {
         _logger = logger;
 
         _serviceProvider       = serviceProvider;
-        _streamFlightOpsName   = FlightConstants.STREAM_FLIGHT_OPS;
+        _streamPassengerName   = FlightConstants.STREAM_PASSENGER;
         _streamFlightInfoName  = FlightConstants.STREAM_FLIGHT_INFO;
         _internalTaskScheduler = new InternalTaskScheduler();
 
@@ -90,19 +92,21 @@ public class FlightOperationsEngine
         _mqStreamEngine.StreamSystemConfig = config;
 
 
-        _flightOpsProducer  = _mqStreamEngine.GetProducer(_streamFlightOpsName, _appName);
-        _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
+        _passengerProducer  = _mqStreamEngine.GetProducer(_streamPassengerName, _appName);
+        _passengerConsumer  = _mqStreamEngine.GetConsumer(_streamPassengerName, _appName, ReceivePassengerMessages);
+        _flightInfoConsumer = _mqStreamEngine.GetConsumer(_streamFlightInfoName, _appName, ReceiveFlightInfoMessages);
+
 
         // Create the stream if it does not exist.
-        _flightOpsProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
-        _flightInfoProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
+        _passengerProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
         await _mqStreamEngine.StartAllStreamsAsync();
 
         _processingThread = new Thread(new ThreadStart(Process));
         _processingThread.Start();
 
         // Setup Scheduled Tasks
-        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Flight", AddScheduledFlight, TimeSpan.FromSeconds(10)));
+        // This is not correct.  This will be done in response to a Consumption message from flightInfo
+        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Flight", AddPassengerToFlight, TimeSpan.FromSeconds(10)));
     }
 
 
@@ -179,13 +183,18 @@ public class FlightOperationsEngine
     }
 
 
+    private async Task<bool> ReceivePassengerMessages(Message message) { return true; }
+
+
+    private async Task<bool> ReceiveFlightInfoMessages(Message message) { return true; }
+
 
     /// <summary>
     /// Adds a scheduled flight.
     /// </summary>
     /// <param name="internalScheduledTask"></param>
     /// <returns></returns>
-    private async Task<EnumInternalTaskReturn> AddScheduledFlight(InternalScheduledTask internalScheduledTask)
+    private async Task<EnumInternalTaskReturn> AddPassengerToFlight(InternalScheduledTask internalScheduledTask)
     {
         // If circuit Breaker still tripped, then return without running task.
         if (CheckCircuitBreaker())
@@ -193,12 +202,13 @@ public class FlightOperationsEngine
             return EnumInternalTaskReturn.NotRun;
         }
 
+        /*
         Message message = _flightOpsProducer.CreateMessage("hello to you");
         message.Properties.ReplyTo = "scott";
         message.ApplicationProperties.Add("Type", "test");
         message.ApplicationProperties.Add("Id", _messageId);
         bool success = await _flightOpsProducer.SendMessageAsync(message);
-
+        */
         return EnumInternalTaskReturn.Success;
     }
 }

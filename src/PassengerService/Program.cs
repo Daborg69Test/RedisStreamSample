@@ -1,14 +1,27 @@
-﻿using FlightOps;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+﻿using System.Reflection;
 
 // See https://aka.ms/new-console-template for more information
 using Microsoft.Extensions.Logging;
+using System.Buffers;
+using System.ComponentModel;
+using System.ComponentModel.Design;
+using System.Diagnostics.Metrics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using RabbitMQ.Stream.Client;
+using RabbitMQ.Stream.Client.Reliable;
+using SlugEnt.MQStreamProcessor;
+using System.Xml.Linq;
+using FlightOps;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
-using SlugEnt.MQStreamProcessor;
-using System.Reflection;
 
+namespace FlightOps;
 
 public class Program
 {
@@ -54,7 +67,7 @@ public class Program
                 services.AddTransient<IMqStreamConsumer, MqStreamConsumer>();
                 services.AddTransient<IMqStreamProducer, MqStreamProducer>();
                 services.AddTransient<IMQStreamEngine, MQStreamEngine>();
-                services.AddTransient<FlightOperationsEngine>();
+                services.AddTransient<PassengerEngine>();
             })
             .ConfigureLogging((_, logging) =>
             {

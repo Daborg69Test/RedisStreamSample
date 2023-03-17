@@ -15,7 +15,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FlightOps", "..\FlightOps\F
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FlightLibrary", "..\FlightLibrary\FlightLibrary.csproj", "{81592F3E-89A7-4A71-8CB9-C7E08B7FC352}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlightInfos", "..\FlightInfos\FlightInfos.csproj", "{777CDECA-9F69-447A-BDB8-7CDA6A20C503}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FlightInfos", "..\FlightInfos\FlightInfos.csproj", "{777CDECA-9F69-447A-BDB8-7CDA6A20C503}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PassengerService", "..\PassengerService\PassengerService.csproj", "{5931F535-4AF0-43D7-BB52-5CAACD937994}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -47,6 +49,10 @@ Global
 		{777CDECA-9F69-447A-BDB8-7CDA6A20C503}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{777CDECA-9F69-447A-BDB8-7CDA6A20C503}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{777CDECA-9F69-447A-BDB8-7CDA6A20C503}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5931F535-4AF0-43D7-BB52-5CAACD937994}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5931F535-4AF0-43D7-BB52-5CAACD937994}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5931F535-4AF0-43D7-BB52-5CAACD937994}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5931F535-4AF0-43D7-BB52-5CAACD937994}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
