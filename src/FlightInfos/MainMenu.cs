@@ -64,20 +64,6 @@ public class MainMenu
 
     internal async Task Display()
     {
-        /*
-        string engineStatus = _started == true ? "Running" : "Stopped";
-        AnsiConsole.WriteLine($" Engine is currently {engineStatus}");
-
-        long nextFlightNum = _flightInfoEngine.CurrentFlightNumber;
-        AnsiConsole.WriteLine($" Last Flight # is {nextFlightNum}");
-
-        AnsiConsole.WriteLine();
-        Console.WriteLine(" ( S ) StartAsync / Stop Producing Flights");
-        Console.WriteLine(" ( D ) Delete FlightInfo Stream");
-        Console.WriteLine(" ( I ) Change Flight Creation Interval");
-        Console.WriteLine(" ( X ) Exit");
-        Console.WriteLine();
-        */
         if (_displayStats != null)
             _displayStats.Refresh();
     }
@@ -98,15 +84,11 @@ public class MainMenu
                         try
                         {
                             await _flightInfoEngine.StartEngineAsync();
-
-                            //ProcessingLoop();
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, ex.ToString());
                         }
-
-                        //                        _displayStats = new DisplayStats(_flightInfoEngine.Stats);
                     }
                     else if (_started)
                     {

@@ -14,14 +14,22 @@ public class MainMenu
     private          string            _streamName = "";
     private          IMqStreamProducer _producer   = null;
 
-    private DisplayStats    _displayStats;
-    private PassengerEngine _passengerEngine;
+    private DisplayPassengerStats _displayStats;
+    private PassengerEngine       _passengerEngine;
 
 
     public MainMenu(ILogger<MainMenu> logger, IServiceProvider serviceProvider)
     {
         _logger          = logger;
         _serviceProvider = serviceProvider;
+        _passengerEngine = _serviceProvider.GetService<PassengerEngine>();
+        if (_passengerEngine == null)
+        {
+            _logger.LogError($"Failed to load the PassengerEngine from ServiceProvider");
+            return;
+        }
+
+        _displayStats = new DisplayPassengerStats();
     }
 
 
@@ -30,7 +38,7 @@ public class MainMenu
     {
         bool keepProcessing = true;
 
-        Display();
+
         while (keepProcessing)
         {
             if (Console.KeyAvailable)
@@ -39,6 +47,12 @@ public class MainMenu
             }
             else
                 Thread.Sleep(1000);
+
+
+            _displayStats.EngineRunning    = _passengerEngine.IsRunning;
+            _displayStats.LastFlightNumber = _passengerEngine.FlightNumberLast;
+
+            Display();
         }
     }
 
@@ -46,13 +60,6 @@ public class MainMenu
 
     internal void Display()
     {
-        string engineStatus = _started == true ? "Running" : "Stopped";
-        AnsiConsole.WriteLine($" Engine is currently {engineStatus}");
-        AnsiConsole.WriteLine();
-        Console.WriteLine(" ( S ) StartAsync / Stop Producing Flights");
-        Console.WriteLine(" ( X ) Exit");
-
-        Console.WriteLine();
         if (_displayStats != null)
             _displayStats.Refresh();
     }
@@ -74,23 +81,16 @@ public class MainMenu
                         try
                         {
                             await _passengerEngine.StartEngineAsync();
-
-                            //ProcessingLoop();
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, ex.ToString());
                         }
-
-                        //                        _displayStats = new DisplayStats(_passengerEngine.Stats);
                     }
                     else if (_started)
                     {
                         // Stop the engine
                         await _passengerEngine.StopEngineAsync();
-
-                        // TODO Dispose it in future.
-                        _passengerEngine = null;
                     }
 
                     _started = !_started;

@@ -14,67 +14,33 @@ using StackExchange.Redis.Extensions.Newtonsoft;
 
 namespace FlightOps;
 
-public class PassengerEngine
+public class PassengerEngine : Engine
 {
-    private          string                _streamPassengerName;
-    private          string                _streamFlightInfoName;
-    private readonly ILogger               _logger;
-    private          IServiceProvider      _serviceProvider;
-    private          IMQStreamEngine       _mqStreamEngine;
-    private          IMqStreamProducer     _passengerProducer;
-    private          IMqStreamConsumer     _passengerConsumer;
-    private          IMqStreamConsumer     _flightInfoConsumer;
-    private          string                _appName                  = "Passenger.App";
-    private          bool                  _circuitBreakerTripped    = false;
-    private          int                   _circuitBreakerTimeOut    = 1;
-    private          int                   _circuitBreakerMaxTimeout = 180;
-    private          int                   _sleepInterval            = 5000;
-    private          long                  _messageId                = 0;
-    private          Thread                _processingThread;
-    private          bool                  _stopProcessing = false;
-    private          InternalTaskScheduler _internalTaskScheduler;
-
-    private RedisLocker                _redisLocker;
-    private RedisConnectionPoolManager _redisConnectionPoolManager;
-    private RedisClient                _redisClient;
-
-    private TimeSpan _redisCacheExpireTimeSpan;
+    private string            _streamPassengerName;
+    private string            _streamFlightInfoName;
+    private IMqStreamProducer _passengerProducer;
+    private IMqStreamConsumer _passengerConsumer;
+    private IMqStreamConsumer _flightInfoConsumer;
+    private string            _appName = "Passenger.App";
 
 
-    public PassengerEngine(ILogger<PassengerEngine> logger, IServiceProvider serviceProvider)
+
+    public PassengerEngine(ILogger<PassengerEngine> logger, IServiceProvider serviceProvider) : base(logger, serviceProvider)
     {
-        _logger = logger;
-
-        _serviceProvider       = serviceProvider;
         _streamPassengerName   = FlightConstants.STREAM_PASSENGER;
         _streamFlightInfoName  = FlightConstants.STREAM_FLIGHT_INFO;
         _internalTaskScheduler = new InternalTaskScheduler();
 
-        ConfigureRedis();
-
-        _redisLocker = new(_redisClient);
 
         // Set Redis lock timeout to 10 days. After 10 days 
         _redisCacheExpireTimeSpan = TimeSpan.FromDays(10);
-    }
 
+        _passengerProducer  = _mqStreamEngine.GetProducer(_streamPassengerName, _appName);
+        _passengerConsumer  = _mqStreamEngine.GetConsumer(_streamPassengerName, _appName, ReceivePassengerMessages);
+        _flightInfoConsumer = _mqStreamEngine.GetConsumer(_streamFlightInfoName, _appName, ReceiveFlightInfoMessages);
 
-
-    public void ConfigureRedis()
-    {
-        RedisConfiguration redisConfig = new()
-        {
-            Hosts          = new[] { new RedisHost { Host = "podmanc.slug.local", Port = 6379 } },
-            Password       = "redis123",
-            ConnectTimeout = 1000,
-            SyncTimeout    = 900,
-            AllowAdmin     = true // Enable admin mode to allow flushing of the database
-        };
-
-
-        _redisConnectionPoolManager = new RedisConnectionPoolManager(redisConfig);
-        NewtonsoftSerializer serializer = new();
-        _redisClient = new RedisClient(_redisConnectionPoolManager, serializer, redisConfig);
+        // Setup Scheduled Tasks
+        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Flight", AddPassengerToFlight, TimeSpan.FromSeconds(10)));
     }
 
 
@@ -85,102 +51,12 @@ public class PassengerEngine
     /// <returns></returns>
     public async Task StartEngineAsync()
     {
-        // Read the last Flight ID 
-
-        StreamSystemConfig config = FlightLibrary.Engine.GetStreamSystemConfig();
-        _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
-        _mqStreamEngine.StreamSystemConfig = config;
-
-
-        _passengerProducer  = _mqStreamEngine.GetProducer(_streamPassengerName, _appName);
-        _passengerConsumer  = _mqStreamEngine.GetConsumer(_streamPassengerName, _appName, ReceivePassengerMessages);
-        _flightInfoConsumer = _mqStreamEngine.GetConsumer(_streamFlightInfoName, _appName, ReceiveFlightInfoMessages);
-
-
         // Create the stream if it does not exist.
         _passengerProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
-        await _mqStreamEngine.StartAllStreamsAsync();
 
-        _processingThread = new Thread(new ThreadStart(Process));
-        _processingThread.Start();
-
-        // Setup Scheduled Tasks
-        // This is not correct.  This will be done in response to a Consumption message from flightInfo
-        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Flight", AddPassengerToFlight, TimeSpan.FromSeconds(10)));
+        await base.StartEngineAsync();
     }
 
-
-
-    /// <summary>
-    /// Stops all producers and consumers
-    /// </summary>
-    /// <returns></returns>
-    public async Task StopEngineAsync()
-    {
-        await _mqStreamEngine.StopAllAsync();
-        _stopProcessing = true;
-    }
-
-
-
-    private void Process()
-    {
-        while (!_stopProcessing)
-        {
-            try
-            {
-                Task checkTasks = _internalTaskScheduler.CheckTasks();
-                Task.WaitAll(checkTasks);
-
-                Thread.Sleep(_sleepInterval);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message, ex);
-            }
-        }
-    }
-
-
-
-    /// <summary>
-    /// Before we produce a message ,we check the circuit breakers to make sure none are tripped.  Returns True if circuit breaker on one or more producers is tripped.
-    /// </summary>
-    /// <returns></returns>
-    public bool CheckCircuitBreaker()
-    {
-        // First check to ensure the circuit breaker is not tripped.  If it is, then we see if it has been reset, if not wait an increasing amount of time...
-        if (_circuitBreakerTripped)
-        {
-            // See if any of the producers circuit breakers are still tripped
-            bool isStillTripped = false;
-            foreach (KeyValuePair<string, IMqStreamProducer> mqStreamProducer in _mqStreamEngine.StreamProducersDictionary)
-            {
-                bool tripped = mqStreamProducer.Value.CircuitBreakerTripped;
-                if (tripped)
-                {
-                    _logger.LogError($"Circuit Break for MQ Stream {mqStreamProducer.Value.FullName} is still tripped");
-                }
-
-                isStillTripped = tripped == true ? true : isStillTripped;
-            }
-
-            if (isStillTripped)
-            {
-                _circuitBreakerTimeOut *= 2;
-                _circuitBreakerTimeOut =  _circuitBreakerTimeOut > _circuitBreakerMaxTimeout ? _circuitBreakerMaxTimeout : _circuitBreakerTimeOut;
-                return true;
-            }
-            else
-            {
-                _logger.LogInformation("Circuit Breakers have all been cleared.");
-                _circuitBreakerTimeOut = 1;
-                _circuitBreakerTripped = false;
-            }
-        }
-
-        return false;
-    }
 
 
     private async Task ReceivePassengerMessages(Message message)
@@ -192,6 +68,12 @@ public class PassengerEngine
             throw;
         }
     }
+
+
+    /// <summary>
+    /// The last received Flight Number
+    /// </summary>
+    public ulong FlightNumberLast { get; protected set; }
 
 
     private async Task ReceiveFlightInfoMessages(Message message)
@@ -214,6 +96,7 @@ public class PassengerEngine
                     if (flight == null)
                         _logger.LogError($"Received a FlightInfo Message event name of: {eventCategory}. It did not contain any Flight Information and should have.");
                     Console.WriteLine($"Flight Number {flight.FlightId} was created at: {flight.CreatedDateTime}");
+                    FlightNumberLast = flight.FlightId;
                     break;
                 default:
                     string msgInfo = message.PrintMessageInfo();

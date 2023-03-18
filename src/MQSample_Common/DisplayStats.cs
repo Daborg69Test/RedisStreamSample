@@ -8,6 +8,7 @@ public class DisplayStats
     protected Layout _layout;
     protected Table  _statsTable;
     protected Table  _menuTable;
+    protected Table  _lastUpdatedTable;
 
     private int _columnCount;
 
@@ -17,9 +18,12 @@ public class DisplayStats
     public DisplayStats()
     {
         _layout = new Layout("FlightInfo")
-            .SplitColumns(
-                          new Layout("Menu"),
-                          new Layout("Stats"));
+            .SplitRows(new Layout("Top")
+                           .SplitColumns(
+                                         new Layout("Menu"),
+                                         new Layout("Stats")),
+                       new Layout("Bottom"));
+        ;
 
         _statsTable             = new Table().Centered();
         _statsTable.ShowHeaders = true;
@@ -28,9 +32,15 @@ public class DisplayStats
         _menuTable = new Table();
         _menuTable.AddColumn("Menu Item");
 
+        _lastUpdatedTable             = new Table();
+        _lastUpdatedTable.ShowHeaders = false;
+        _lastUpdatedTable.AddColumn("last");
+        _lastUpdatedTable.AddRow("Never");
+
         // Add Table to Stats Panel
         _layout["Stats"].Update(_statsTable);
         _layout["menu"].Update(_menuTable);
+        _layout["bottom"].Update(_lastUpdatedTable);
     }
 
 
@@ -127,6 +137,10 @@ public class DisplayStats
     public void Refresh()
     {
         UpdateData();
+
+        // Update Last Updated Row.
+        _lastUpdatedTable.UpdateCell(0, 0, "Last Updated:  " + DateTime.Now.ToString());
+
         System.Console.Clear();
         AnsiConsole.Write(_layout);
     }
