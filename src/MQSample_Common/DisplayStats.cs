@@ -1,81 +1,78 @@
 ﻿using Spectre.Console;
 
-using Spectre.Console;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using MQSample_Common;
-
 
 namespace MQSample_Common;
 
 public class DisplayStats
 {
-    private Table _table;
-    private Stats _stats;
+    protected Layout _layout;
+    protected Table  _statsTable;
+    protected Table  _menuTable;
+
+    private int _columnCount;
+
+    private Dictionary<string, string> _menuItems = new();
 
 
-    public DisplayStats(Stats stats)
+    public DisplayStats()
     {
-        _stats = stats;
+        _layout = new Layout("FlightInfo")
+            .SplitColumns(
+                          new Layout("Menu"),
+                          new Layout("Stats"));
 
-        _table = new Table().Centered();
+        _statsTable             = new Table().Centered();
+        _statsTable.ShowHeaders = true;
+        _columnCount            = 0;
 
-        BuildColumns();
-        AddRows();
+        _menuTable = new Table();
+        _menuTable.AddColumn("Menu Item");
 
-        System.Console.Clear();
-        AnsiConsole.Write(_table);
+        // Add Table to Stats Panel
+        _layout["Stats"].Update(_statsTable);
+        _layout["menu"].Update(_menuTable);
     }
 
 
+    public void AddMenuItem(string key, string name) { _menuItems.Add(key, name); }
 
-    private void BuildColumns()
+
+    public void DisplayMenu()
     {
-        // Columns
-        _table.ShowHeaders = true;
-        _table.AddColumn("Title");
-        _table.Columns[0].PadRight(6);
-        _table.AddColumn("Primary");
+        foreach (KeyValuePair<string, string> menuItem in _menuItems)
+        {
+            _menuTable.AddRow(MarkUpValue($" ( {menuItem.Key} )  {menuItem.Value}", "yellow"));
+        }
+
+
+        _layout["menu"].Update(_menuTable);
     }
 
-    private void AddRows()
+
+    public void AddRow(string rowTitle) { _statsTable.AddRow(MarkUpValue(rowTitle, "green")); }
+
+
+    public void AddColumn(string columnTitle, int padding = 0)
     {
-        _table.AddRow(MarkUpValue("Msg Sent", "green"));
-        _table.AddRow(MarkUpValue("Created Msg", "green"));
-        _table.AddRow(MarkUpValue("Success Msg", "green"));
-        _table.AddRow(MarkUpValue("Failure Msg", "green"));
-        _table.AddRow(MarkUpValue("CB Tripped", "green"));
-        _table.AddRow(MarkUpValue("Consumed Msg", "green"));
-        _table.AddRow(MarkUpValue("Last BatchRecv", "green"));
-        _table.AddRow(MarkUpValue("Last CheckPt", "green"));
-        _table.AddRow(MarkUpValue("Await CheckPt", "green"));
+        _statsTable.AddColumn(columnTitle);
+        if (padding > 0)
+            _statsTable.Columns[_columnCount].PadRight(padding);
     }
 
-    private void AddColumnsForStats()
-    {
-        int col = 0;
-            col++;
-            int row = 0;
-            _table.UpdateCell(row++, col, MarkUp(_stats.SuccessMessages));
-            _table.UpdateCell(row++, col, MarkUp(_stats.CreatedMessages));
-            _table.UpdateCell(row++, col, MarkUp(_stats.SuccessMessages));
-            _table.UpdateCell(row++, col, MarkUp(_stats.FailureMessages, false));
-            _table.UpdateCell(row++, col, MarkUp(_stats.CircuitBreakerTripped));
-            _table.UpdateCell(row++, col, MarkUp(_stats.ConsumedMessages));
-            _table.UpdateCell(row++, col, MarkUpValue(_stats.ConsumeLastBatchReceived, "grey"));
-            _table.UpdateCell(row++, col, MarkUp(_stats.ConsumeLastCheckpoint));
-            _table.UpdateCell(row++, col, MarkUp(_stats.ConsumeCurrentAwaitingCheckpoint));
-    }
 
-    private string MarkUpValue(string value, string colorName, bool bold = false, bool underline = false,
-        bool italic = false)
+    /// <summary>
+    /// Must Override - Is used to update the Stats Display
+    /// </summary>
+    protected virtual void UpdateData() { }
+
+
+
+    protected string MarkUpValue(string value, string colorName, bool bold = false, bool underline = false,
+                                 bool italic = false)
     {
         string val = "[" + colorName + "]";
-        if (bold) val += "[bold]";
+        if (bold)
+            val += "[bold]";
 
 
         val += value + "[/]";
@@ -83,52 +80,54 @@ public class DisplayStats
     }
 
 
-    private string MarkUp(ulong value, bool positiveGreen = true)
+    protected string MarkUp(ulong value, bool positiveGreen = true)
     {
         string color = "green";
         if (!positiveGreen)
         {
-            if (value > 0) color = "red";
+            if (value > 0)
+                color = "red";
         }
 
         string val = "[" + color + "]";
         val += value + "[/]";
         return val;
-
     }
 
-    private string MarkUp(int value, bool positiveGreen = true)
+
+    protected string MarkUp(int value, bool positiveGreen = true)
     {
         string color = "green";
         if (!positiveGreen)
         {
-            if (value > 0) color = "red";
+            if (value > 0)
+                color = "red";
         }
 
         string val = "[" + color + "]";
         val += value + "[/]";
         return val;
-
     }
 
-    private string MarkUp(bool value, bool trueGreen = true)
+
+    protected string MarkUp(bool value)
     {
         string color = "";
-        if (trueGreen) color = "green";
-        else color = "red";
+        if (value)
+            color = "green";
+        else
+            color = "red";
 
         string val = "[" + color + "]";
         val += value + "[/]";
         return val;
-
     }
 
 
     public void Refresh()
     {
-        AddColumnsForStats();
+        UpdateData();
         System.Console.Clear();
-        AnsiConsole.Write(_table);
-
+        AnsiConsole.Write(_layout);
     }
 }

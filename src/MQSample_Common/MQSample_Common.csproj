@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.0" />
+    <PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.6" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.46.0" />
   </ItemGroup>
 

@@ -4,23 +4,23 @@ namespace FlightLibrary;
 
 public class Flight
 {
-    public Flight(long flightId)
+    public Flight(ulong flightId)
     {
-        Id              = flightId;
+        FlightId        = flightId;
         CreatedDateTime = DateTime.Now;
     }
 
 
     [JsonConstructor]
-    public Flight(long flightId, DateTime createdDateTime)
+    public Flight(ulong flightId, DateTime createdDateTime)
     {
-        Id              = flightId;
+        FlightId        = flightId;
         CreatedDateTime = createdDateTime;
     }
 
 
 
-    public long Id { get; private set; }
+    public ulong FlightId { get; private set; }
 
     public DateTime CreatedDateTime { get; private set; }
 

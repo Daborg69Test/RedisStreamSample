@@ -72,24 +72,5 @@ namespace MQSample_Common
 
             return flightDay;
         }
-
-
-
-        /// <summary>
-        /// Defines the configuration for connecting to RabbitMQ Servers
-        /// </summary>
-        /// <returns></returns>
-        public static StreamSystemConfig GetStreamSystemConfig()
-        {
-            IPEndPoint a = Helpers.GetIPEndPointFromHostName("rabbitmqa.slug.local", 5552);
-            IPEndPoint b = Helpers.GetIPEndPointFromHostName("rabbitmqb.slug.local", 5552);
-            IPEndPoint c = Helpers.GetIPEndPointFromHostName("rabbitmqc.slug.local", 5552);
-
-            StreamSystemConfig config = new StreamSystemConfig
-            {
-                UserName = "testUser", Password = "TESTUSER", VirtualHost = "Test", Endpoints = new List<EndPoint> { a, b, c },
-            };
-            return config;
-        }
     }
 }

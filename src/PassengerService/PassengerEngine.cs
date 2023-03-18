@@ -87,7 +87,7 @@ public class PassengerEngine
     {
         // Read the last Flight ID 
 
-        StreamSystemConfig config = HelperFunctions.GetStreamSystemConfig();
+        StreamSystemConfig config = FlightLibrary.Engine.GetStreamSystemConfig();
         _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
         _mqStreamEngine.StreamSystemConfig = config;
 
@@ -183,10 +183,52 @@ public class PassengerEngine
     }
 
 
-    private async Task<bool> ReceivePassengerMessages(Message message) { return true; }
+    private async Task ReceivePassengerMessages(Message message)
+    {
+        try { }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+    }
 
 
-    private async Task<bool> ReceiveFlightInfoMessages(Message message) { return true; }
+    private async Task ReceiveFlightInfoMessages(Message message)
+    {
+        try
+        {
+            string eventCategory = message.GetApplicationPropertyAsString(FlightConstants.MQ_EVENT_NAME);
+            if (eventCategory == String.Empty)
+            {
+                string msgInfo = message.PrintMessageInfo();
+                _logger.LogError($"Received an empty eventCategory for FlightInfo message.  {msgInfo}");
+                return;
+            }
+
+            // Process the message
+            switch (eventCategory)
+            {
+                case FlightConstants.MQEN_FlightCreated:
+                    Flight flight = message.GetObject<Flight>();
+                    if (flight == null)
+                        _logger.LogError($"Received a FlightInfo Message event name of: {eventCategory}. It did not contain any Flight Information and should have.");
+                    Console.WriteLine($"Flight Number {flight.FlightId} was created at: {flight.CreatedDateTime}");
+                    break;
+                default:
+                    string msgInfo = message.PrintMessageInfo();
+                    _logger.LogError($"Received a FlightInfo Message event name of: {eventCategory}. This is an unknown eventCategory.  Event Info:  {msgInfo}");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error in receipt of message in ReceiveFlightInfoMessages.  {ex.Message}", ex);
+        }
+
+        return;
+    }
+
 
 
     /// <summary>

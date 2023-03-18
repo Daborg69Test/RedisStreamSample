@@ -19,8 +19,8 @@ public class MainMenu
     private          string            _streamName = "";
     private          IMqStreamProducer _producer   = null;
 
-    private DisplayStats     _displayStats;
-    private FlightInfoEngine _flightInfoEngine;
+    private DisplayFlightInfoStats _displayStats;
+    private FlightInfoEngine       _flightInfoEngine;
 
 
     public MainMenu(ILogger<MainMenu> logger, IServiceProvider serviceProvider)
@@ -33,6 +33,8 @@ public class MainMenu
             _logger.LogError($"Failed to load the FlightInfoEngine from ServiceProvider");
             return;
         }
+
+        _displayStats = new DisplayFlightInfoStats();
     }
 
 
@@ -41,7 +43,7 @@ public class MainMenu
     {
         bool keepProcessing = true;
 
-        Display();
+
         while (keepProcessing)
         {
             if (Console.KeyAvailable)
@@ -50,6 +52,11 @@ public class MainMenu
             }
             else
                 Thread.Sleep(1000);
+
+            _displayStats.EngineRunning       = _flightInfoEngine.IsRunning;
+            _displayStats.CurrentFlightNumber = _flightInfoEngine.CurrentFlightNumber;
+
+            Display();
         }
     }
 
@@ -57,11 +64,12 @@ public class MainMenu
 
     internal async Task Display()
     {
+        /*
         string engineStatus = _started == true ? "Running" : "Stopped";
         AnsiConsole.WriteLine($" Engine is currently {engineStatus}");
 
-        long nextFlightNum = await _flightInfoEngine.GetNextFlightNumberFromRedis();
-        AnsiConsole.WriteLine($" Next Flight # is {nextFlightNum}");
+        long nextFlightNum = _flightInfoEngine.CurrentFlightNumber;
+        AnsiConsole.WriteLine($" Last Flight # is {nextFlightNum}");
 
         AnsiConsole.WriteLine();
         Console.WriteLine(" ( S ) StartAsync / Stop Producing Flights");
@@ -69,6 +77,7 @@ public class MainMenu
         Console.WriteLine(" ( I ) Change Flight Creation Interval");
         Console.WriteLine(" ( X ) Exit");
         Console.WriteLine();
+        */
         if (_displayStats != null)
             _displayStats.Refresh();
     }
@@ -103,9 +112,6 @@ public class MainMenu
                     {
                         // Stop the engine
                         await _flightInfoEngine.StopEngineAsync();
-
-                        // TODO Dispose it in future.
-                        _flightInfoEngine = null;
                     }
 
                     _started = !_started;
@@ -135,8 +141,6 @@ public class MainMenu
                         await _flightInfoEngine.StopEngineAsync();
                     return false;
             }
-
-            Display();
         }
 
 

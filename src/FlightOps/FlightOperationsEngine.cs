@@ -85,7 +85,7 @@ public class FlightOperationsEngine
     {
         // Read the last Flight ID 
 
-        StreamSystemConfig config = HelperFunctions.GetStreamSystemConfig();
+        StreamSystemConfig config = FlightLibrary.Engine.GetStreamSystemConfig();
         _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
         _mqStreamEngine.StreamSystemConfig = config;
 

@@ -1,122 +1,52 @@
 ﻿using ByteSizeLib;
 using FlightLibrary;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using MQSample_Common;
 using RabbitMQ.Stream.Client;
 using SlugEnt;
-using SlugEnt.Locker;
 using SlugEnt.MQStreamProcessor;
-using StackExchange.Redis.Extensions.Core.Configuration;
-using StackExchange.Redis.Extensions.Core.Implementations;
-using StackExchange.Redis.Extensions.Newtonsoft;
 
 
 namespace FlightOps;
 
-public class FlightInfoEngine
+public class FlightInfoEngine : Engine
 {
     public static readonly  string TaskName_FlightCreation = "Create Flight";
     private static readonly string REDIS_FLIGHT_NUMBER     = "FlightInfo.FlightNumber";
 
-    private          string                _streamFlightInfoName;
-    private readonly ILogger               _logger;
-    private          IServiceProvider      _serviceProvider;
-    private          IMQStreamEngine       _mqStreamEngine;
-    private          IMqStreamProducer     _flightInfoProducer;
-    private          string                _appName                  = "FlightInfoService";
-    private          bool                  _circuitBreakerTripped    = false;
-    private          int                   _circuitBreakerTimeOut    = 1;
-    private          int                   _circuitBreakerMaxTimeout = 180;
-    private          int                   _sleepInterval            = 5000;
-    private          long                  _messageId                = 0;
-    private          Thread                _processingThread;
-    private          bool                  _stopProcessing = false;
-    private          InternalTaskScheduler _internalTaskScheduler;
-    private          long                  _nextFlightID = 1;
+    private string            _streamFlightInfoName;
+    private IMqStreamProducer _flightInfoProducer;
+    private string            _appName = "FlightInfoService";
 
-    private RedisLocker                _redisLocker;
-    private RedisConnectionPoolManager _redisConnectionPoolManager;
-    private RedisClient                _redisClient;
+    private ulong _currentFlightId = 0;
 
-
-    private TimeSpan _redisCacheExpireTimeSpan;
 
 
 #region "BasicEngineStuff"
 
-    public FlightInfoEngine(ILogger<FlightInfoEngine> logger, IServiceProvider serviceProvider)
+    public FlightInfoEngine(ILogger<FlightInfoEngine> logger, IServiceProvider serviceProvider) : base(logger, serviceProvider)
     {
-        _logger = logger;
+        _streamFlightInfoName = FlightConstants.STREAM_FLIGHT_INFO;
 
-        _serviceProvider       = serviceProvider;
-        _streamFlightInfoName  = FlightConstants.STREAM_FLIGHT_INFO;
-        _internalTaskScheduler = new InternalTaskScheduler();
-
-        ConfigureRedis();
-
-        _redisLocker = new(_redisClient);
-
-        // Set Redis lock timeout to 10 days. After 10 days 
+        // Set Redis cache expiration to 10 days - We are using it as a database...
         _redisCacheExpireTimeSpan = TimeSpan.FromDays(10);
-    }
 
-
-
-    public void ConfigureRedis()
-    {
-        RedisConfiguration redisConfig = new()
-        {
-            Hosts          = new[] { new RedisHost { Host = "podmanc.slug.local", Port = 6379 } },
-            Password       = "redis23",
-            ConnectTimeout = 2000,
-            SyncTimeout    = 2000,
-            AllowAdmin     = true // Enable admin mode to allow flushing of the database
-        };
-
-
-        _redisConnectionPoolManager = new RedisConnectionPoolManager(redisConfig);
-        NewtonsoftSerializer serializer = new();
-        _redisClient = new RedisClient(_redisConnectionPoolManager, serializer, redisConfig);
         GetNextFlightNumberFromRedis();
-    }
 
 
-    public async Task<long> GetNextFlightNumberFromRedis()
-    {
-        try
-        {
-            long value = -1;
-            if (await _redisClient.Db0.ExistsAsync(REDIS_FLIGHT_NUMBER))
-                value = await _redisClient.Db0.GetAsync<long>(REDIS_FLIGHT_NUMBER);
+        _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
 
-            _nextFlightID = value;
-            return value;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError($"Failed to retrieve Flight Number from Redis DB.  Error: {ex.Message}", ex);
-            return -1;
-        }
+
+        // Setup Scheduled Tasks for the Engine
+        _internalTaskScheduler.AddTask(new InternalScheduledTask(TaskName_FlightCreation, CreateScheduledFlight, TimeSpan.FromSeconds(10)));
     }
 
 
     /// <summary>
-    /// Increases the next flight number and stores in redis.
+    /// Performs initialization logic for the FlightInfo Engine
     /// </summary>
     /// <returns></returns>
-    public async Task<long> SetNextFlightNumber()
-    {
-        _nextFlightID++;
-        await _redisClient.Db0.AddAsync<long>(REDIS_FLIGHT_NUMBER, _nextFlightID);
-        return _nextFlightID;
-    }
+    public async Task InitializeAsync() { await base.InitializeAsync(); }
 
-
-    public long NextFlightNumber
-    {
-        get { return _nextFlightID; }
-    }
 
 
     /// <summary>
@@ -125,102 +55,56 @@ public class FlightInfoEngine
     /// <returns></returns>
     public async Task StartEngineAsync()
     {
-        if (_nextFlightID == -1)
-        {
-            _nextFlightID = 0;
-            await SetNextFlightNumber();
-        }
-
-        StreamSystemConfig config = HelperFunctions.GetStreamSystemConfig();
-        _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
-        _mqStreamEngine.StreamSystemConfig = config;
-
-
-        _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
-
         // Create the stream if it does not exist.
         _flightInfoProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
-        await _mqStreamEngine.StartAllStreamsAsync();
 
-        _processingThread = new Thread(new ThreadStart(Process));
-        _processingThread.Start();
-
-        // Setup Scheduled Tasks
-        _internalTaskScheduler.AddTask(new InternalScheduledTask(TaskName_FlightCreation, CreateScheduledFlight, TimeSpan.FromSeconds(10)));
+        await base.StartEngineAsync();
     }
-
 
 
     /// <summary>
-    /// Stops all producers and consumers
+    ///  The current Flight Number
     /// </summary>
-    /// <returns></returns>
-    public async Task StopEngineAsync()
+    public ulong CurrentFlightNumber
     {
-        if (_mqStreamEngine != null)
-            await _mqStreamEngine.StopAllAsync();
-        _stopProcessing = true;
+        get { return _currentFlightId; }
     }
 
 
+    public ulong CreatedFlightSuccess { get; private set; }
+    public ulong CreatedFlightError { get; private set; }
 
-    private void Process()
+
+
+    public async Task<ulong> GetNextFlightNumberFromRedis()
     {
-        while (!_stopProcessing)
+        try
         {
-            try
-            {
-                Task checkTasks = _internalTaskScheduler.CheckTasks();
-                Task.WaitAll(checkTasks);
+            ulong value = 0;
+            if (await _redisClient.Db0.ExistsAsync(REDIS_FLIGHT_NUMBER))
+                value = await _redisClient.Db0.GetAsync<ulong>(REDIS_FLIGHT_NUMBER);
 
-                Thread.Sleep(_sleepInterval);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message, ex);
-            }
+            _currentFlightId = value;
+            _currentFlightId++;
+            return value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Failed to retrieve Flight Number from Redis DB.  Error: {ex.Message}", ex);
+            return 0;
         }
     }
 
 
-
     /// <summary>
-    /// Before we produce a message ,we check the circuit breakers to make sure none are tripped.  Returns True if circuit breaker on one or more producers is tripped.
+    /// Increases the next flight number and stores in redis.
     /// </summary>
     /// <returns></returns>
-    public bool CheckCircuitBreaker()
+    public async Task<ulong> SetNextFlightNumber()
     {
-        // First check to ensure the circuit breaker is not tripped.  If it is, then we see if it has been reset, if not wait an increasing amount of time...
-        if (_circuitBreakerTripped)
-        {
-            // See if any of the producers circuit breakers are still tripped
-            bool isStillTripped = false;
-            foreach (KeyValuePair<string, IMqStreamProducer> mqStreamProducer in _mqStreamEngine.StreamProducersDictionary)
-            {
-                bool tripped = mqStreamProducer.Value.CircuitBreakerTripped;
-                if (tripped)
-                {
-                    _logger.LogError($"Circuit Break for MQ Stream {mqStreamProducer.Value.FullName} is still tripped");
-                }
-
-                isStillTripped = tripped == true ? true : isStillTripped;
-            }
-
-            if (isStillTripped)
-            {
-                _circuitBreakerTimeOut *= 2;
-                _circuitBreakerTimeOut =  _circuitBreakerTimeOut > _circuitBreakerMaxTimeout ? _circuitBreakerMaxTimeout : _circuitBreakerTimeOut;
-                return true;
-            }
-            else
-            {
-                _logger.LogInformation("Circuit Breakers have all been cleared.");
-                _circuitBreakerTimeOut = 1;
-                _circuitBreakerTripped = false;
-            }
-        }
-
-        return false;
+        _currentFlightId++;
+        await _redisClient.Db0.AddAsync<ulong>(REDIS_FLIGHT_NUMBER, _currentFlightId);
+        return _currentFlightId;
     }
 
 #endregion
@@ -260,17 +144,20 @@ public class FlightInfoEngine
         }
 
         // Create a flight
-        long   fltnum = await SetNextFlightNumber();
+        ulong  fltnum = await SetNextFlightNumber();
         Flight flight = new Flight(fltnum);
 
         Message message = _flightInfoProducer.CreateMessage(flight);
-        message.Properties.ReplyTo = "scott";
 
         message.AddApplicationProperty(FlightConstants.MQ_EVENT_CATEGORY, EnumMessageEvents.FlightInfo);
-        message.AddApplicationProperty(FlightConstants.MQ_EVENT_NAME, "FlightCreated");
-        message.AddApplicationProperty(FlightConstants.MQ_EVENT_ID, flight.Id);
+        message.AddApplicationProperty(FlightConstants.MQ_EVENT_NAME, FlightConstants.MQEN_FlightCreated);
+        message.AddApplicationProperty(FlightConstants.MQ_EVENT_ID, flight.FlightId);
 
         bool success = await _flightInfoProducer.SendMessageAsync(message);
+        if (success)
+            CreatedFlightSuccess++;
+        else
+            CreatedFlightError++;
 
         return EnumInternalTaskReturn.Success;
     }

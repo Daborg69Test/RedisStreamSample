@@ -39,8 +39,6 @@ public class MainMenu
             }
             else
                 Thread.Sleep(1000);
-
-            Display();
         }
     }
 
@@ -52,6 +50,8 @@ public class MainMenu
         AnsiConsole.WriteLine($" Engine is currently {engineStatus}");
         AnsiConsole.WriteLine();
         Console.WriteLine(" ( S ) StartAsync / Stop Producing Flights");
+        Console.WriteLine(" ( X ) Exit");
+
         Console.WriteLine();
         if (_displayStats != null)
             _displayStats.Refresh();
@@ -97,7 +97,8 @@ public class MainMenu
                     break;
 
                 case ConsoleKey.X:
-                    await _passengerEngine.StopEngineAsync();
+                    if (_passengerEngine != null)
+                        await _passengerEngine.StopEngineAsync();
                     return false;
             }
         }
