@@ -17,11 +17,13 @@ public class DisplayStats
 
     public DisplayStats()
     {
+        //Layout x = new Layout("hi").;
+
         _layout = new Layout("FlightInfo")
             .SplitRows(new Layout("Top")
                            .SplitColumns(
-                                         new Layout("Menu"),
-                                         new Layout("Stats")),
+                                         new Layout("Menu").Size(48),
+                                         new Layout("Stats").Size(84)),
                        new Layout("Bottom"));
         ;
 
@@ -141,7 +143,7 @@ public class DisplayStats
         // Update Last Updated Row.
         _lastUpdatedTable.UpdateCell(0, 0, "Last Updated:  " + DateTime.Now.ToString());
 
-        System.Console.Clear();
+        AnsiConsole.Clear();
         AnsiConsole.Write(_layout);
     }
 }

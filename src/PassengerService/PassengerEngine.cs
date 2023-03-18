@@ -16,6 +16,8 @@ namespace FlightOps;
 
 public class PassengerEngine : Engine
 {
+    private static readonly string REDIS_RECV_FLIGHT_NUMBER = "Passenger.LastCreatedFlightNumber";
+
     private string            _streamPassengerName;
     private string            _streamFlightInfoName;
     private IMqStreamProducer _passengerProducer;
@@ -76,6 +78,26 @@ public class PassengerEngine : Engine
     public ulong FlightNumberLast { get; protected set; }
 
 
+    /// <summary>
+    /// Number of times Flight number was out of sequence
+    /// </summary>
+    public ulong FlightNumberOutOfSync { get; protected set; }
+
+
+    /// <summary>
+    /// Number of Messages Consumed (Received) from the FlightInfo Stream
+    /// </summary>
+    public ulong FlightInfoMessagesConsumed
+    {
+        get { return _flightInfoConsumer != null ? _flightInfoConsumer.MessagesConsumed : 0; }
+    }
+
+
+    /// <summary>
+    /// Processes FlightInfo Stream messages
+    /// </summary>
+    /// <param name="message"></param>
+    /// <returns></returns>
     private async Task ReceiveFlightInfoMessages(Message message)
     {
         try
@@ -96,7 +118,17 @@ public class PassengerEngine : Engine
                     if (flight == null)
                         _logger.LogError($"Received a FlightInfo Message event name of: {eventCategory}. It did not contain any Flight Information and should have.");
                     Console.WriteLine($"Flight Number {flight.FlightId} was created at: {flight.CreatedDateTime}");
+
+                    // Store Flight Number into a number of places
+                    if ((FlightNumberLast + 1) != flight.FlightId)
+                    {
+                        _logger.LogError($"Received Flight Number out of Sequence.  Expecting: {FlightNumberLast + 1} but actually was: {flight.FlightId}.");
+                        FlightNumberOutOfSync++;
+                    }
+
+
                     FlightNumberLast = flight.FlightId;
+                    await _redisClient.Db0.AddAsync<ulong>(REDIS_RECV_FLIGHT_NUMBER, flight.FlightId);
                     break;
                 default:
                     string msgInfo = message.PrintMessageInfo();

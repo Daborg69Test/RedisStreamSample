@@ -5,8 +5,13 @@ namespace FlightOps;
 
 public class DisplayPassengerStats : DisplayStats
 {
-    public DisplayPassengerStats() : base()
+    private PassengerEngine _passengerEngine;
+
+
+    public DisplayPassengerStats(PassengerEngine passengerEngine) : base()
     {
+        _passengerEngine = passengerEngine;
+
         AddColumn("Passenger Svc", 6);
         AddColumn("Data", 6);
         AddColumn("Success", 6);
@@ -14,7 +19,9 @@ public class DisplayPassengerStats : DisplayStats
 
         AddRow("Engine Running");
         AddRow("Last Recv Flt #");
+        AddRow("MQ: FlightInfo MsgRecv");
         AddRow("MQ:Passenger Created");
+        AddRow("Flt # Out Of Sequence");
 
         // Create Menu Items
         AddMenuItem("S", "Start / Stop Engine");
@@ -33,15 +40,23 @@ public class DisplayPassengerStats : DisplayStats
 
     public bool EngineRunning { get; set; }
 
+    public ulong FlightOutOfSequenceCount { get; set; }
+
+    public ulong FlightInfoMsgReceived { get; set; }
+
 
     protected override void UpdateData()
     {
         int row = 0;
         _menuTable.Expand = true;
 
-        _statsTable.UpdateCell(row++, 1, MarkUp(EngineRunning));
-        _statsTable.UpdateCell(row++, 1, MarkUp(LastFlightNumber));
+        _statsTable.UpdateCell(row, 1, MarkUp(EngineRunning));
+        _statsTable.UpdateCell(++row, 1, MarkUp(LastFlightNumber));
+        _statsTable.UpdateCell(++row, 1, MarkUp(FlightInfoMsgReceived));
+
+        // Passengers Created
         _statsTable.UpdateCell(row, 2, MarkUp(CreatedSuccess));
         _statsTable.UpdateCell(row, 3, MarkUp(CreatedError));
+        _statsTable.UpdateCell(++row, 1, MarkUp(FlightOutOfSequenceCount, false));
     }
 }

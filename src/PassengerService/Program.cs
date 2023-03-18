@@ -27,6 +27,7 @@ public class Program
 {
     static async Task Main(string[] args)
     {
+        Console.WindowWidth = 180;
         Serilog.ILogger Logger;
         Log.Logger = new LoggerConfiguration()
 #if DEBUG

@@ -62,6 +62,12 @@ public class FlightInfoEngine : Engine
     }
 
 
+    internal IMqStreamProducer FlightInfoProducer
+    {
+        get { return _flightInfoProducer; }
+    }
+
+
     /// <summary>
     ///  The current Flight Number
     /// </summary>
@@ -74,6 +80,11 @@ public class FlightInfoEngine : Engine
     public ulong CreatedFlightSuccess { get; private set; }
     public ulong CreatedFlightError { get; private set; }
 
+
+    /// <summary>
+    /// Number of Flights created during this run
+    /// </summary>
+    public ulong Stat_FlightsCreatedCount { get; private set; }
 
 
     public async Task<ulong> GetNextFlightNumberFromRedis()

@@ -29,7 +29,7 @@ public class MainMenu
             return;
         }
 
-        _displayStats = new DisplayPassengerStats();
+        _displayStats = new DisplayPassengerStats(_passengerEngine);
     }
 
 
@@ -49,9 +49,10 @@ public class MainMenu
                 Thread.Sleep(1000);
 
 
-            _displayStats.EngineRunning    = _passengerEngine.IsRunning;
-            _displayStats.LastFlightNumber = _passengerEngine.FlightNumberLast;
-
+            _displayStats.EngineRunning            = _passengerEngine.IsRunning;
+            _displayStats.LastFlightNumber         = _passengerEngine.FlightNumberLast;
+            _displayStats.FlightInfoMsgReceived    = _passengerEngine.FlightInfoMessagesConsumed;
+            _displayStats.FlightOutOfSequenceCount = _passengerEngine.FlightNumberOutOfSync;
             Display();
         }
     }

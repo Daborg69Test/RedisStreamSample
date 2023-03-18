@@ -5,16 +5,23 @@ namespace FlightOps;
 
 public class DisplayFlightInfoStats : DisplayStats
 {
-    public DisplayFlightInfoStats() : base()
+    private FlightInfoEngine _flightInfoEngine;
+
+
+    public DisplayFlightInfoStats(FlightInfoEngine flightInfoEngine) : base()
     {
+        // Store the engine where we will get the stats from
+        _flightInfoEngine = flightInfoEngine;
+
         AddColumn("FlightInfo", 6);
         AddColumn("Data", 6);
-        AddColumn("Success", 6);
-        AddColumn("Failures", 6);
+        AddColumn("Conf. Pass", 6);
+        AddColumn("Conf. Fail", 6);
 
         AddRow("Engine Running");
         AddRow("Current Flt #");
-        AddRow("Flight Created");
+        AddRow("Flight Info Prod");
+        AddRow("Flights Created");
 
         // Create Menu Items
         AddMenuItem("S", "Start / Stop Engine");
@@ -25,13 +32,36 @@ public class DisplayFlightInfoStats : DisplayStats
     }
 
 
-    public ulong CurrentFlightNumber { get; set; }
+    public ulong CurrentFlightNumber
+    {
+        get { return _flightInfoEngine.CurrentFlightNumber; }
+    }
 
-    public ulong CreatedSuccess { get; set; }
+    public ulong Created
+    {
+        get { return _flightInfoEngine.FlightInfoProducer.MessageCounter; }
+    }
 
-    public ulong CreatedError { get; set; }
+    public ulong CreateConfirmedSuccess
+    {
+        get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesSuccessfullyConfirmed; }
+    }
 
-    public bool EngineRunning { get; set; }
+    public ulong CreatedError
+    {
+        get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesErrored; }
+    }
+
+    public bool EngineRunning
+    {
+        get { return _flightInfoEngine.IsRunning; }
+    }
+
+
+    public ulong FlightsCreated
+    {
+        get { return _flightInfoEngine.Stat_FlightsCreatedCount; }
+    }
 
 
     protected override void UpdateData()
@@ -39,9 +69,15 @@ public class DisplayFlightInfoStats : DisplayStats
         int row = 0;
         _menuTable.Expand = true;
 
-        _statsTable.UpdateCell(row++, 1, MarkUp(EngineRunning));
-        _statsTable.UpdateCell(row++, 1, MarkUp(CurrentFlightNumber));
-        _statsTable.UpdateCell(row, 2, MarkUp(CreatedSuccess));
+        _statsTable.UpdateCell(row, 1, MarkUp(EngineRunning));
+        _statsTable.UpdateCell(++row, 1, MarkUp(CurrentFlightNumber));
+
+        // Flight Info Producer
+        _statsTable.UpdateCell(++row, 1, MarkUp(Created));
+        _statsTable.UpdateCell(row, 2, MarkUp(CreateConfirmedSuccess));
         _statsTable.UpdateCell(row, 3, MarkUp(CreatedError));
+
+        // Flights Created This Run
+        _statsTable.UpdateCell(++row, 1, MarkUp(FlightsCreated));
     }
 }

@@ -34,7 +34,7 @@ public class MainMenu
             return;
         }
 
-        _displayStats = new DisplayFlightInfoStats();
+        _displayStats = new DisplayFlightInfoStats(_flightInfoEngine);
     }
 
 
@@ -53,8 +53,6 @@ public class MainMenu
             else
                 Thread.Sleep(1000);
 
-            _displayStats.EngineRunning       = _flightInfoEngine.IsRunning;
-            _displayStats.CurrentFlightNumber = _flightInfoEngine.CurrentFlightNumber;
 
             Display();
         }
