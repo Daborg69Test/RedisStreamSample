@@ -10,5 +10,6 @@ public class FlightConstants
     public const string MQ_EVENT_NAME     = "Evt.Name"; // ReserveFlight, FlightDeparted, FlightArrived
     public const string MQ_EVENT_ID       = "Evt.Id";   // The ID of the Type / name.  For instance Passenger ID.
 
-    public const string MQEN_FlightCreated = "created";
+    public const string MQEN_FlightCreated   = "created";
+    public const string MQEN_PassengerBooked = "booked";
 }

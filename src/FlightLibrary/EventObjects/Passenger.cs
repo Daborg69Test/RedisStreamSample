@@ -1,19 +1,22 @@
-﻿namespace FlightLibrary;
+﻿using System.Text.Json.Serialization;
+
+namespace FlightLibrary;
 
 public class Passenger
 {
-    public Passenger(string name, long id)
+    [JsonConstructor]
+    public Passenger(string name, ulong id)
     {
         Name = name;
         Id   = id;
     }
 
 
-    public long Id { get; private set; }
+    public ulong Id { get; private set; }
 
     public string Name { get; private set; }
 
-    public List<long> FlightIds { get; set; }
+    public List<ulong> FlightIds { get; set; }
 
-    public long CurrentFlight { get; set; }
+    public ulong CurrentFlight { get; set; }
 }

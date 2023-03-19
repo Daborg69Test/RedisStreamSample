@@ -16,9 +16,9 @@
 		<PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
 		<PackageReference Include="Serilog.Sinks.Debug" Version="2.0.0" />
 		<PackageReference Include="Serilog.Sinks.SpectreConsole" Version="0.3.3" />
-		<PackageReference Include="SlugEnt.InternalTaskScheduler" Version="1.0.1" />
+		<PackageReference Include="SlugEnt.InternalTaskScheduler" Version="1.0.2" />
 		<PackageReference Include="SlugEnt.Locker" Version="1.4.1" />
-		<PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.6" />
+		<PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.8" />
 		<PackageReference Include="Spectre.Console.Cli" Version="0.46.0" />
 		<PackageReference Include="StackExchange.Redis.Extensions.Core" Version="9.1.0" />
 		<PackageReference Include="StackExchange.Redis.Extensions.Newtonsoft" Version="9.1.0" />

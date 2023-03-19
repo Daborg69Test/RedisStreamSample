@@ -43,6 +43,8 @@ public class MainMenu
     {
         bool keepProcessing = true;
 
+        // Initialize the Engines
+        await _flightInfoEngine.InitializeAsync();
 
         while (keepProcessing)
         {
@@ -111,9 +113,15 @@ public class MainMenu
                     break;
 
                 case ConsoleKey.D:
-                    _flightInfoEngine.DeleteStream();
+                    _flightInfoEngine.DeleteStreamAsync();
                     Console.WriteLine($"Deleted Stream for Engine FlightInfo");
                     Thread.Sleep(5000);
+                    break;
+
+                case ConsoleKey.R:
+                    _flightInfoEngine.Reset();
+                    return false;
+
                     break;
 
                 case ConsoleKey.X:

@@ -32,17 +32,40 @@ public class DisplayPassengerStats : DisplayStats
     }
 
 
-    public ulong LastFlightNumber { get; set; }
+    public ulong LastFlightNumber
+    {
+        get { return _passengerEngine.FlightNumberLast; }
+    }
 
-    public ulong CreatedSuccess { get; set; }
+    public ulong PassengerCreatedSuccess
+    {
+        get { return _passengerEngine.PassengerProducer.Stat_MessagesSuccessfullyConfirmed; }
+    }
 
-    public ulong CreatedError { get; set; }
+    public ulong PassengerCreatedError
+    {
+        get { return _passengerEngine.PassengerProducer.Stat_MessagesErrored; }
+    }
 
-    public bool EngineRunning { get; set; }
+    public ulong PassengerCreated
+    {
+        get { return _passengerEngine.PassengerProducer.MessageCounter; }
+    }
 
-    public ulong FlightOutOfSequenceCount { get; set; }
+    public bool EngineRunning
+    {
+        get { return _passengerEngine.IsRunning; }
+    }
 
-    public ulong FlightInfoMsgReceived { get; set; }
+    public ulong FlightOutOfSequenceCount
+    {
+        get { return _passengerEngine.FlightNumberOutOfSync; }
+    }
+
+    public ulong FlightInfoMsgReceived
+    {
+        get { return _passengerEngine.FlightInfoMessagesConsumed; }
+    }
 
 
     protected override void UpdateData()
@@ -52,11 +75,14 @@ public class DisplayPassengerStats : DisplayStats
 
         _statsTable.UpdateCell(row, 1, MarkUp(EngineRunning));
         _statsTable.UpdateCell(++row, 1, MarkUp(LastFlightNumber));
+
+        // FlightInfo Received
         _statsTable.UpdateCell(++row, 1, MarkUp(FlightInfoMsgReceived));
 
         // Passengers Created
-        _statsTable.UpdateCell(row, 2, MarkUp(CreatedSuccess));
-        _statsTable.UpdateCell(row, 3, MarkUp(CreatedError));
+        _statsTable.UpdateCell(++row, 1, MarkUp(PassengerCreated));
+        _statsTable.UpdateCell(row, 2, MarkUp(PassengerCreatedSuccess));
+        _statsTable.UpdateCell(row, 3, MarkUp(PassengerCreatedError));
         _statsTable.UpdateCell(++row, 1, MarkUp(FlightOutOfSequenceCount, false));
     }
 }

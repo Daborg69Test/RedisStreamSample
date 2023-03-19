@@ -190,7 +190,7 @@ public class FlightOperationsEngine
         // If circuit Breaker still tripped, then return without running task.
         if (CheckCircuitBreaker())
         {
-            return EnumInternalTaskReturn.NotRun;
+            return EnumInternalTaskReturn.NotRunMissingResources;
         }
 
         Message message = _flightOpsProducer.CreateMessage("hello to you");

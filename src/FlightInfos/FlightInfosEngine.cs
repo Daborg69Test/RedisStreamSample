@@ -30,9 +30,6 @@ public class FlightInfoEngine : Engine
         // Set Redis cache expiration to 10 days - We are using it as a database...
         _redisCacheExpireTimeSpan = TimeSpan.FromDays(10);
 
-        GetNextFlightNumberFromRedis();
-
-
         _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
 
 
@@ -45,7 +42,11 @@ public class FlightInfoEngine : Engine
     /// Performs initialization logic for the FlightInfo Engine
     /// </summary>
     /// <returns></returns>
-    public async Task InitializeAsync() { await base.InitializeAsync(); }
+    public async Task InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await GetNextFlightNumberFromRedis();
+    }
 
 
 
@@ -96,7 +97,6 @@ public class FlightInfoEngine : Engine
                 value = await _redisClient.Db0.GetAsync<ulong>(REDIS_FLIGHT_NUMBER);
 
             _currentFlightId = value;
-            _currentFlightId++;
             return value;
         }
         catch (Exception ex)
@@ -110,10 +110,15 @@ public class FlightInfoEngine : Engine
     /// <summary>
     /// Increases the next flight number and stores in redis.
     /// </summary>
+    /// <param name="reset">If true then reset value to initial</param>
     /// <returns></returns>
-    public async Task<ulong> SetNextFlightNumber()
+    public async Task<ulong> SetNextFlightNumber(bool shouldReset = false)
     {
-        _currentFlightId++;
+        if (shouldReset)
+            _currentFlightId = 0;
+        else
+            _currentFlightId++;
+
         await _redisClient.Db0.AddAsync<ulong>(REDIS_FLIGHT_NUMBER, _currentFlightId);
         return _currentFlightId;
     }
@@ -138,7 +143,17 @@ public class FlightInfoEngine : Engine
     }
 
 
-    public void DeleteStream() { _flightInfoProducer.DeleteStreamFromRabbitMQ(); }
+    public async Task DeleteStreamAsync() { _flightInfoProducer.DeleteStreamFromRabbitMQ(); }
+
+
+    public async Task Reset()
+    {
+        // First Delete the Stream:
+        await DeleteStreamAsync();
+
+        // Reset the Flight Number
+        SetNextFlightNumber(true);
+    }
 
 
     /// <summary>
@@ -151,7 +166,7 @@ public class FlightInfoEngine : Engine
         // If circuit Breaker still tripped, then return without running task.
         if (CheckCircuitBreaker())
         {
-            return EnumInternalTaskReturn.NotRun;
+            return EnumInternalTaskReturn.NotRunMissingResources;
         }
 
         // Create a flight

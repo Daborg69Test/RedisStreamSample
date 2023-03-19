@@ -48,11 +48,6 @@ public class MainMenu
             else
                 Thread.Sleep(1000);
 
-
-            _displayStats.EngineRunning            = _passengerEngine.IsRunning;
-            _displayStats.LastFlightNumber         = _passengerEngine.FlightNumberLast;
-            _displayStats.FlightInfoMsgReceived    = _passengerEngine.FlightInfoMessagesConsumed;
-            _displayStats.FlightOutOfSequenceCount = _passengerEngine.FlightNumberOutOfSync;
             Display();
         }
     }
@@ -78,7 +73,6 @@ public class MainMenu
                     if (!_started)
                     {
                         // Start the engine
-                        _passengerEngine = _serviceProvider.GetService<PassengerEngine>();
                         try
                         {
                             await _passengerEngine.StartEngineAsync();
@@ -95,6 +89,12 @@ public class MainMenu
                     }
 
                     _started = !_started;
+                    break;
+
+                case ConsoleKey.R:
+                    await _passengerEngine.Reset();
+                    return false;
+
                     break;
 
                 case ConsoleKey.X:
