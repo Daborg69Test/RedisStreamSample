@@ -15,8 +15,8 @@ public class DisplayFlightInfoStats : DisplayStats
 
         AddColumn("FlightInfo", 6);
         AddColumn("Data", 6);
-        AddColumn("Conf. Pass", 6);
-        AddColumn("Conf. Fail", 6);
+        AddColumn("Sent", 6);
+        AddColumn("Received", 6);
 
         AddRow("Engine Running");
         AddRow("Current Flt #");
@@ -39,17 +39,21 @@ public class DisplayFlightInfoStats : DisplayStats
 
     public ulong Created
     {
-        get { return _flightInfoEngine.FlightInfoProducer.MessageCounter; }
+        get { return _flightInfoEngine.Statistic_FlightsCreatedCount; }
     }
 
-    public ulong CreateConfirmedSuccess
+    public ulong Sent
     {
-        get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesSuccessfullyConfirmed; }
+        get { return _flightInfoEngine.FlightInfoStream.StatisticMessagesSent; }
+
+        //  get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesSuccessfullyConfirmed; }
     }
 
-    public ulong CreatedError
+    public ulong Received
     {
-        get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesErrored; }
+        get { return 99; }
+
+        //    get { return _flightInfoEngine.FlightInfoProducer.Stat_MessagesErrored; }
     }
 
     public bool EngineRunning
@@ -60,7 +64,7 @@ public class DisplayFlightInfoStats : DisplayStats
 
     public ulong FlightsCreated
     {
-        get { return _flightInfoEngine.Stat_FlightsCreatedCount; }
+        get { return _flightInfoEngine.Statistic_FlightsCreatedCount; }
     }
 
 
@@ -74,8 +78,8 @@ public class DisplayFlightInfoStats : DisplayStats
 
         // Flight Info Producer
         _statsTable.UpdateCell(++row, 1, MarkUp(Created));
-        _statsTable.UpdateCell(row, 2, MarkUp(CreateConfirmedSuccess));
-        _statsTable.UpdateCell(row, 3, MarkUp(CreatedError));
+        _statsTable.UpdateCell(row, 2, MarkUp(Sent));
+        _statsTable.UpdateCell(row, 3, MarkUp(Received));
 
         // Flights Created This Run
         _statsTable.UpdateCell(++row, 1, MarkUp(FlightsCreated));

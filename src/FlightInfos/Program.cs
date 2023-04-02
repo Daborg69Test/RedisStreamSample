@@ -6,6 +6,8 @@ using Serilog;
 using Serilog.Events;
 using SlugEnt.MQStreamProcessor;
 using System.Reflection;
+using Microsoft.Extensions.Configuration;
+using SlugEnt.SLRStreamProcessing;
 
 
 
@@ -13,7 +15,8 @@ namespace FlightOps;
 
 public class Program
 {
-    static async Task Main(string[] args)
+    private
+        static async Task Main(string[] args)
     {
         Serilog.ILogger Logger;
         Log.Logger = new LoggerConfiguration()
@@ -49,12 +52,12 @@ public class Program
     /// <returns></returns>
     static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
+            .ConfigureAppConfiguration((_, config) => { config.AddJsonFile("AppSettings.json"); })
             .ConfigureServices((_, services) =>
             {
                 services.AddTransient<MainMenu>();
-                services.AddTransient<IMqStreamConsumer, MqStreamConsumer>();
-                services.AddTransient<IMqStreamProducer, MqStreamProducer>();
-                services.AddTransient<IMQStreamEngine, MQStreamEngine>();
+                services.AddTransient<SLRStreamEngine>();
+                services.AddTransient<SLRStream>();
                 services.AddTransient<FlightInfoEngine>();
             })
             .ConfigureLogging((_, logging) =>

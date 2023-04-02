@@ -1,24 +1,17 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using MQSample_Common;
-using Spectre.Console;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using SlugEnt.MQStreamProcessor;
+using StackExchange.Redis.Extensions.Core.Configuration;
 
 namespace FlightOps;
 
 public class MainMenu
 {
-    private readonly ILogger           _logger;
-    private          IServiceProvider  _serviceProvider;
-    private          bool              _started;
-    private          string            _streamName = "";
-    private          IMqStreamProducer _producer   = null;
+    private readonly ILogger          _logger;
+    private          IServiceProvider _serviceProvider;
+    private          bool             _started;
 
+
+    private RedisConfiguration     _redisConfiguration;
     private DisplayFlightInfoStats _displayStats;
     private FlightInfoEngine       _flightInfoEngine;
 
@@ -34,6 +27,7 @@ public class MainMenu
             return;
         }
 
+
         _displayStats = new DisplayFlightInfoStats(_flightInfoEngine);
     }
 
@@ -44,7 +38,13 @@ public class MainMenu
         bool keepProcessing = true;
 
         // Initialize the Engines
-        await _flightInfoEngine.InitializeAsync();
+        _redisConfiguration = new RedisConfiguration
+        {
+            Password = "redispw", Hosts = new[] { new RedisHost { Host = "localhost", Port = 6379 } }, ConnectTimeout = 700, PoolSize = 1,
+        };
+
+
+        await _flightInfoEngine.InitializeAsync(_redisConfiguration, _redisConfiguration);
 
         while (keepProcessing)
         {

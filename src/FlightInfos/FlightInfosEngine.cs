@@ -1,9 +1,10 @@
-﻿using ByteSizeLib;
-using FlightLibrary;
+﻿using FlightLibrary;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using RabbitMQ.Stream.Client;
 using SlugEnt;
-using SlugEnt.MQStreamProcessor;
+using SlugEnt.SLRStreamProcessing;
+using StackExchange.Redis.Extensions.Core.Configuration;
+using StackExchange.Redis.Extensions.Core.Implementations;
 
 
 namespace FlightOps;
@@ -13,28 +14,25 @@ public class FlightInfoEngine : Engine
     public static readonly  string TaskName_FlightCreation = "Create Flight";
     private static readonly string REDIS_FLIGHT_NUMBER     = "FlightInfo.FlightNumber";
 
-    private string            _streamFlightInfoName;
-    private IMqStreamProducer _flightInfoProducer;
-    private string            _appName = "FlightInfoService";
+    private string _streamFlightInfoName;
 
-    private ulong _currentFlightId = 0;
+    private SLRStream _flightInfoStream;
 
+    private string _appName = "FlightInfoService";
+
+    private ulong                      _currentFlightId = 0;
+    private RedisConfiguration         _redisNonStreamConfigation;
+    private RedisConnectionPoolManager _redisConnectionManager;
+
+    private IConfiguration _configuration;
 
 
 #region "BasicEngineStuff"
 
-    public FlightInfoEngine(ILogger<FlightInfoEngine> logger, IServiceProvider serviceProvider) : base(logger, serviceProvider)
+    public FlightInfoEngine(ILogger<FlightInfoEngine> logger, IConfiguration configuration, IServiceProvider serviceProvider) :
+        base(logger, configuration, serviceProvider)
     {
         _streamFlightInfoName = FlightConstants.STREAM_FLIGHT_INFO;
-
-        // Set Redis cache expiration to 10 days - We are using it as a database...
-        _redisCacheExpireTimeSpan = TimeSpan.FromDays(10);
-
-        _flightInfoProducer = _mqStreamEngine.GetProducer(_streamFlightInfoName, _appName);
-
-
-        // Setup Scheduled Tasks for the Engine
-        _internalTaskScheduler.AddTask(new InternalScheduledTask(TaskName_FlightCreation, CreateScheduledFlight, TimeSpan.FromSeconds(10)));
     }
 
 
@@ -42,10 +40,32 @@ public class FlightInfoEngine : Engine
     /// Performs initialization logic for the FlightInfo Engine
     /// </summary>
     /// <returns></returns>
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(RedisConfiguration redisStreamConfiguration, RedisConfiguration redisNonStreamConfiguration)
     {
-        await base.InitializeAsync();
-        await GetNextFlightNumberFromRedis();
+        try
+        {
+            // In this scenario this is not necessary as we are using the same Redis DB backend, but it might be the case this is not true.
+            _redisNonStreamConfigation = redisNonStreamConfiguration;
+
+            await base.InitializeAsync(redisStreamConfiguration);
+
+            SLRStreamConfig config = new()
+            {
+                StreamName = FlightConstants.STREAM_FLIGHT_INFO, ApplicationName = "FlightInfos", StreamType = EnumSLRStreamTypes.ProducerOnly,
+            };
+            _flightInfoStream = await _slrStreamEngine.GetSLRStreamAsync(config);
+
+
+            // Setup the non-Streaming Redis Connection.
+            _redisConnectionPoolManager = new(redisStreamConfiguration);
+
+            // Get the starting Flight Number
+            await GetNextFlightNumberFromRedis();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error during FlightInfo Engine Initialization.  {ex.Message}");
+        }
     }
 
 
@@ -56,17 +76,22 @@ public class FlightInfoEngine : Engine
     /// <returns></returns>
     public async Task StartEngineAsync()
     {
-        // Create the stream if it does not exist.
-        _flightInfoProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
-
         await base.StartEngineAsync();
+
+        // Setup Scheduled Tasks for the Engine
+        _internalTaskScheduler.AddTask(new InternalScheduledTask(TaskName_FlightCreation, CreateScheduledFlight, TimeSpan.FromSeconds(5)));
     }
 
 
-    internal IMqStreamProducer FlightInfoProducer
+
+    /// <summary>
+    /// Returns the Flight Info Stream Object
+    /// </summary>
+    internal SLRStream FlightInfoStream
     {
-        get { return _flightInfoProducer; }
+        get { return _flightInfoStream; }
     }
+
 
 
     /// <summary>
@@ -85,7 +110,7 @@ public class FlightInfoEngine : Engine
     /// <summary>
     /// Number of Flights created during this run
     /// </summary>
-    public ulong Stat_FlightsCreatedCount { get; private set; }
+    public ulong Statistic_FlightsCreatedCount { get; private set; }
 
 
     public async Task<ulong> GetNextFlightNumberFromRedis()
@@ -93,8 +118,8 @@ public class FlightInfoEngine : Engine
         try
         {
             ulong value = 0;
-            if (await _redisClient.Db0.ExistsAsync(REDIS_FLIGHT_NUMBER))
-                value = await _redisClient.Db0.GetAsync<ulong>(REDIS_FLIGHT_NUMBER);
+            if (await _redisClient.Db1.Database.KeyExistsAsync(REDIS_FLIGHT_NUMBER))
+                value = await _redisClient.Db1.GetAsync<ulong>(REDIS_FLIGHT_NUMBER);
 
             _currentFlightId = value;
             return value;
@@ -119,7 +144,7 @@ public class FlightInfoEngine : Engine
         else
             _currentFlightId++;
 
-        await _redisClient.Db0.AddAsync<ulong>(REDIS_FLIGHT_NUMBER, _currentFlightId);
+        await _redisClient.Db1.AddAsync<ulong>(REDIS_FLIGHT_NUMBER, _currentFlightId);
         return _currentFlightId;
     }
 
@@ -143,9 +168,21 @@ public class FlightInfoEngine : Engine
     }
 
 
-    public async Task DeleteStreamAsync() { _flightInfoProducer.DeleteStreamFromRabbitMQ(); }
+
+    /// <summary>
+    /// Deletes the Stream
+    /// </summary>
+    /// <returns></returns>
+    public async Task DeleteStreamAsync() { _flightInfoStream.DeleteStream(); }
 
 
+    //TODO Remove this - Put in the Base Engine Object
+
+
+    /// <summary>
+    /// This is only needed for this sample. It deletes the stream and then resets the flight number
+    /// </summary>
+    /// <returns></returns>
     public async Task Reset()
     {
         // First Delete the Stream:
@@ -156,6 +193,7 @@ public class FlightInfoEngine : Engine
     }
 
 
+
     /// <summary>
     /// Adds a scheduled flight.
     /// </summary>
@@ -163,28 +201,25 @@ public class FlightInfoEngine : Engine
     /// <returns></returns>
     private async Task<EnumInternalTaskReturn> CreateScheduledFlight(InternalScheduledTask internalScheduledTask)
     {
-        // If circuit Breaker still tripped, then return without running task.
-        if (CheckCircuitBreaker())
-        {
-            return EnumInternalTaskReturn.NotRunMissingResources;
-        }
-
         // Create a flight
         ulong  fltnum = await SetNextFlightNumber();
         Flight flight = new Flight(fltnum);
 
-        Message message = _flightInfoProducer.CreateMessage(flight);
+        SLRMessage message = SLRMessage.CreateMessage<Flight>(flight);
 
-        message.AddApplicationProperty(FlightConstants.MQ_EVENT_CATEGORY, EnumMessageEvents.FlightInfo);
-        message.AddApplicationProperty(FlightConstants.MQ_EVENT_NAME, FlightConstants.MQEN_FlightCreated);
-        message.AddApplicationProperty(FlightConstants.MQ_EVENT_ID, flight.FlightId);
+        ;
+        message.AddProperty(MSG_EVENT_CATEGORY, EventCategories.Flights);
+        message.AddProperty(MSG_EVENT_NAME, FlightConstants.MQEN_FlightCreated);
+        message.AddProperty(MSG_EVENT_ID, flight.FlightId);
 
-        bool success = await _flightInfoProducer.SendMessageAsync(message);
-        if (success)
+        Statistic_FlightsCreatedCount += 1;
+        await _flightInfoStream.SendMessageAsync(message);
+
+/*        if (success)
             CreatedFlightSuccess++;
         else
             CreatedFlightError++;
-
+*/
         return EnumInternalTaskReturn.Success;
     }
 }

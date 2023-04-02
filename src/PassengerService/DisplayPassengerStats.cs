@@ -39,17 +39,17 @@ public class DisplayPassengerStats : DisplayStats
 
     public ulong PassengerCreatedSuccess
     {
-        get { return _passengerEngine.PassengerProducer.Stat_MessagesSuccessfullyConfirmed; }
+        get { return _passengerEngine.StatisticPassengersCreated; }
     }
 
     public ulong PassengerCreatedError
     {
-        get { return _passengerEngine.PassengerProducer.Stat_MessagesErrored; }
+        get { return 99; } //_passengerEngine.PassengerProducer.Stat_MessagesErrored; }
     }
 
     public ulong PassengerCreated
     {
-        get { return _passengerEngine.PassengerProducer.MessageCounter; }
+        get { return _passengerEngine.StatisticPassengersCreated; }
     }
 
     public bool EngineRunning
@@ -64,7 +64,7 @@ public class DisplayPassengerStats : DisplayStats
 
     public ulong FlightInfoMsgReceived
     {
-        get { return _passengerEngine.FlightInfoMessagesConsumed; }
+        get { return _passengerEngine.StatisticFlightMessagesProcessed; }
     }
 
 

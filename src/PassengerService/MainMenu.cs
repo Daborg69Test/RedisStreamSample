@@ -3,19 +3,21 @@ using Microsoft.Extensions.Logging;
 using MQSample_Common;
 using SlugEnt.MQStreamProcessor;
 using Spectre.Console;
+using StackExchange.Redis.Extensions.Core.Configuration;
 
 namespace FlightOps;
 
 public class MainMenu
 {
-    private readonly ILogger           _logger;
-    private          IServiceProvider  _serviceProvider;
-    private          bool              _started;
-    private          string            _streamName = "";
-    private          IMqStreamProducer _producer   = null;
+    private readonly ILogger          _logger;
+    private          IServiceProvider _serviceProvider;
+    private          bool             _started;
+    private          string           _streamName = "";
 
+    private RedisConfiguration    _redisConfiguration;
     private DisplayPassengerStats _displayStats;
     private PassengerEngine       _passengerEngine;
+
 
 
     public MainMenu(ILogger<MainMenu> logger, IServiceProvider serviceProvider)
@@ -37,6 +39,15 @@ public class MainMenu
     internal async Task Start()
     {
         bool keepProcessing = true;
+
+        // Initialize the Engines
+        _redisConfiguration = new RedisConfiguration
+        {
+            Password = "redispw", Hosts = new[] { new RedisHost { Host = "localhost", Port = 6379 } }, ConnectTimeout = 700, PoolSize = 1,
+        };
+
+
+        await _passengerEngine.InitializeAsync(_redisConfiguration);
 
 
         while (keepProcessing)

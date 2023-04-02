@@ -1,33 +1,41 @@
 ﻿using System.Net;
+using System.Net.NetworkInformation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Stream.Client;
 using SlugEnt;
 using SlugEnt.MQStreamProcessor;
+using SlugEnt.SLRStreamProcessing;
+using StackExchange.Redis;
 using StackExchange.Redis.Extensions.Core.Configuration;
 using StackExchange.Redis.Extensions.Core.Implementations;
 using StackExchange.Redis.Extensions.System.Text.Json;
+using Microsoft.Extensions.Configuration;
+
 
 namespace FlightLibrary;
 
 public class Engine
 {
-    protected readonly ILogger               _logger;
-    protected readonly IServiceProvider      _serviceProvider;
-    protected          IMQStreamEngine       _mqStreamEngine;
-    protected          InternalTaskScheduler _internalTaskScheduler;
+    public static readonly string MSG_EVENT_CATEGORY = ".MC";
+    public static readonly string MSG_EVENT_NAME     = ".MN";
+    public static readonly string MSG_EVENT_ID       = ".MI";
 
-    //protected RedisLocker                _redisLocker;
+    protected readonly ILogger _logger;
+
+    protected readonly IServiceProvider _serviceProvider;
+
+    protected SLRStreamEngine _slrStreamEngine;
+
+    //protected          IMQStreamEngine       _mqStreamEngine;
+    protected InternalTaskScheduler _internalTaskScheduler;
+    protected ConfigurationOptions  _redisConfigurationOptions;
+
     protected RedisConnectionPoolManager _redisConnectionPoolManager;
     protected RedisClient                _redisClient;
     protected TimeSpan                   _redisCacheExpireTimeSpan;
-
-    private bool _circuitBreakerTripped    = false;
-    private int  _circuitBreakerTimeOut    = 1;
-    private int  _circuitBreakerMaxTimeout = 180;
-
-//    private Thread _processingThread;
-    private bool _stopProcessing = false;
+    protected IConfiguration             _configuration;
+    private   bool                       _stopProcessing = false;
 
 
     /// <summary>
@@ -35,19 +43,22 @@ public class Engine
     /// </summary>
     /// <param name="logger"></param>
     /// <param name="serviceProvider"></param>
-    public Engine(ILogger<Engine> logger, IServiceProvider serviceProvider)
+    public Engine(ILogger<Engine> logger, IConfiguration configuration, IServiceProvider serviceProvider)
     {
         _logger                = logger;
         _serviceProvider       = serviceProvider;
         _internalTaskScheduler = new InternalTaskScheduler();
+        _configuration         = configuration;
+
+        // Setup the streaming engine
+        _slrStreamEngine = _serviceProvider.GetService<SLRStreamEngine>();
+        if (_slrStreamEngine == null)
+            throw new ApplicationException($"Unable to locate the SLRStreamEngine class in the Service Directory");
 
 
-        // Setup the MQ Stream Engine and Producer
-        StreamSystemConfig config = GetStreamSystemConfig();
-        _mqStreamEngine                    = _serviceProvider.GetService<IMQStreamEngine>();
-        _mqStreamEngine.StreamSystemConfig = config;
-
-        ConfigureRedis();
+        // Set Parallel mode of internal tasks.
+        bool RunParallel = configuration.GetValue<bool>("RunInParallel");
+        _internalTaskScheduler.RunTasksInParallel = RunParallel;
     }
 
 
@@ -69,93 +80,22 @@ public class Engine
     protected bool IsStopped { get; set; }
 
 
-    /// <summary>
-    /// Defines the configuration for connecting to RabbitMQ Servers
-    /// </summary>
-    /// <returns></returns>
-    public static StreamSystemConfig GetStreamSystemConfig()
-    {
-        IPEndPoint a = Helpers.GetIPEndPointFromHostName("rabbitmqa.slug.local", 5552);
-        IPEndPoint b = Helpers.GetIPEndPointFromHostName("rabbitmqb.slug.local", 5552);
-        IPEndPoint c = Helpers.GetIPEndPointFromHostName("rabbitmqc.slug.local", 5552);
-
-        StreamSystemConfig config = new StreamSystemConfig
-        {
-            UserName = "testUser", Password = "TESTUSER", VirtualHost = "Test", Endpoints = new List<EndPoint> { a, b, c },
-        };
-        return config;
-    }
-
-
-
-    public void ConfigureRedis()
-    {
-        RedisConfiguration redisConfig = new()
-        {
-            Hosts          = new[] { new RedisHost { Host = "podmanc.slug.local", Port = 6379 } },
-            Password       = "redis23",
-            ConnectTimeout = 2000,
-            SyncTimeout    = 2000,
-            AllowAdmin     = true // Enable admin mode to allow flushing of the database
-        };
-
-
-        _redisConnectionPoolManager = new RedisConnectionPoolManager(redisConfig);
-        SystemTextJsonSerializer serializer = new();
-
-        //NewtonsoftSerializer     serializer = new();
-        _redisClient = new RedisClient(_redisConnectionPoolManager, serializer, redisConfig);
-    }
-
-
-
-    /// <summary>
-    /// Before we produce a message ,we check the circuit breakers to make sure none are tripped.  Returns True if circuit breaker on one or more producers is tripped.
-    /// </summary>
-    /// <returns></returns>
-    public bool CheckCircuitBreaker()
-    {
-        // First check to ensure the circuit breaker is not tripped.  If it is, then we see if it has been reset, if not wait an increasing amount of time...
-        if (_circuitBreakerTripped)
-        {
-            // See if any of the producers circuit breakers are still tripped
-            bool isStillTripped = false;
-            foreach (KeyValuePair<string, IMqStreamProducer> mqStreamProducer in _mqStreamEngine.StreamProducersDictionary)
-            {
-                bool tripped = mqStreamProducer.Value.CircuitBreakerTripped;
-                if (tripped)
-                {
-                    _logger.LogError($"Circuit Break for MQ Stream {mqStreamProducer.Value.FullName} is still tripped");
-                }
-
-                isStillTripped = tripped == true ? true : isStillTripped;
-            }
-
-            if (isStillTripped)
-            {
-                _circuitBreakerTimeOut *= 2;
-                _circuitBreakerTimeOut =  _circuitBreakerTimeOut > _circuitBreakerMaxTimeout ? _circuitBreakerMaxTimeout : _circuitBreakerTimeOut;
-                return true;
-            }
-            else
-            {
-                _logger.LogInformation("Circuit Breakers have all been cleared.");
-                _circuitBreakerTimeOut = 1;
-                _circuitBreakerTripped = false;
-            }
-        }
-
-        return false;
-    }
-
-
 
     /// <summary>
     /// Initializes the engine.  
     /// </summary>
     /// <para>This can be overridden in derived classes, but they should call back to this method.</para>
     /// <returns></returns>
-    public async Task InitializeAsync() { }
+    public async Task<bool> InitializeAsync(RedisConfiguration redisConfiguration)
+    {
+        _redisConnectionPoolManager = new RedisConnectionPoolManager(redisConfiguration);
+        SystemTextJsonSerializer serializer = new();
+        _redisClient = new RedisClient(_redisConnectionPoolManager, serializer, redisConfiguration);
+
+        _slrStreamEngine.RedisConfiguration = redisConfiguration;
+        bool initialized = _slrStreamEngine.Initialize(redisConfiguration);
+        return initialized;
+    }
 
 
 
@@ -168,8 +108,6 @@ public class Engine
     {
         if (IsRunning)
             return;
-
-        await _mqStreamEngine.StartAllStreamsAsync();
 
         Thread processingThread = new Thread(new ThreadStart(Process));
         processingThread.Start();
@@ -187,9 +125,7 @@ public class Engine
         if (!IsRunning)
             return;
 
-
-        if (_mqStreamEngine != null)
-            await _mqStreamEngine.StopAllAsync();
+        _internalTaskScheduler.RemoveAllTasks();
 
         _stopProcessing = true;
         IsRunning       = false;
@@ -208,8 +144,11 @@ public class Engine
         {
             try
             {
-                Task checkTasks = _internalTaskScheduler.CheckTasks();
-                Task.WaitAll(checkTasks);
+                _internalTaskScheduler.CheckTasks();
+
+                //Task checkTasks = _internalTaskScheduler.CheckTasks();
+
+                //Task.WaitAll(checkTasks);
 
                 Thread.Sleep(EngineSleepInterval);
             }
@@ -220,5 +159,43 @@ public class Engine
         }
 
         IsStopped = true;
+    }
+
+
+
+    /// <summary>
+    /// Determines if message has an Event Category Name property on it.
+    /// </summary>
+    /// <param name="message">The SLRMessage</param>
+    /// <param name="streamName">Name of stream the message is from</param>
+    /// <returns></returns>
+    public (bool isValid, string eventCategoryName ) ValidateEventCategory(SLRMessage message, string streamName)
+    {
+        string eventCategory = message.GetPropertyAsString(MSG_EVENT_CATEGORY);
+        if (eventCategory == String.Empty)
+        {
+            string msgInfo = message.PrintMessageInfo();
+            _logger.LogError($"Received an empty eventCategory on the {streamName} stream.  Message: {msgInfo}");
+
+            return (false, string.Empty);
+        }
+
+        return (true, eventCategory);
+    }
+
+
+    public (bool isValid, string eventName) ValidateEventName(SLRMessage message, string streamName)
+    {
+        string eventName = message.GetPropertyAsString(MSG_EVENT_NAME);
+        if (eventName == String.Empty)
+        {
+            string msgInfo = message.PrintMessageInfo();
+            _logger.LogError($"Received an empty eventName for the message on stream {streamName}.  Message: {msgInfo}");
+
+            // Return True, event though technically it is an issue,  This should be a testing thing only.
+            return (false, string.Empty);
+        }
+
+        return (true, eventName);
     }
 }

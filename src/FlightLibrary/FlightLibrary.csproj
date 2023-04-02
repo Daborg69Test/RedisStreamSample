@@ -7,11 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.4" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
-    <PackageReference Include="SlugEnt.InternalTaskScheduler" Version="1.0.2" />
+    <PackageReference Include="SlugEnt.InternalTaskScheduler" Version="1.0.8" />
     <PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.8" />
-    <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="9.1.0" />
-    <PackageReference Include="StackExchange.Redis.Extensions.System.Text.Json" Version="9.1.0" />
+    <PackageReference Include="SlugEnt.SLRStreamProcessing" Version="0.2.5" />
+    <PackageReference Include="StackExchange.Redis" Version="2.6.104" />
   </ItemGroup>
 
 </Project>

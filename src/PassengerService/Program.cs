@@ -20,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Events;
+using SlugEnt.SLRStreamProcessing;
 
 namespace FlightOps;
 
@@ -65,9 +66,8 @@ public class Program
             .ConfigureServices((_, services) =>
             {
                 services.AddTransient<MainMenu>();
-                services.AddTransient<IMqStreamConsumer, MqStreamConsumer>();
-                services.AddTransient<IMqStreamProducer, MqStreamProducer>();
-                services.AddTransient<IMQStreamEngine, MQStreamEngine>();
+                services.AddTransient<SLRStream>();
+                services.AddTransient<SLRStreamEngine>();
                 services.AddTransient<PassengerEngine>();
             })
             .ConfigureLogging((_, logging) =>

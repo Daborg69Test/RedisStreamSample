@@ -1,38 +1,34 @@
 ﻿using Bogus;
-using ByteSizeLib;
 using FlightLibrary;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using MQSample_Common;
-using RabbitMQ.Stream.Client;
 using SlugEnt;
-using SlugEnt.Locker;
-using SlugEnt.MQStreamProcessor;
+using SlugEnt.SLRStreamProcessing;
+using StackExchange.Redis;
 using StackExchange.Redis.Extensions.Core.Configuration;
-using StackExchange.Redis.Extensions.Core.Implementations;
-using StackExchange.Redis.Extensions.Newtonsoft;
+using System.Collections.Concurrent;
 
 
 namespace FlightOps;
 
 public class PassengerEngine : Engine
 {
-    private static readonly string REDIS_RECV_FLIGHT_NUMBER     = "PassengerSvc.LastCreatedFlightNumber";
+    private static readonly string REDIS_RECV_FLIGHT_NUMBER     = "PassengerSvc.LastReceivedFlightNumber";
     private static readonly string REDIS_PSVC_LAST_PASSENGER_ID = "PassengerSvc.LastPassenger.Id";
 
-    private string            _streamPassengerName;
-    private string            _streamFlightInfoName;
-    private IMqStreamProducer _passengerProducer;
-    private IMqStreamConsumer _passengerConsumer;
-    private IMqStreamConsumer _flightInfoConsumer;
-    private string            _appName = "Passenger.App";
+    private string    _streamPassengerName;
+    private string    _streamFlightInfoName;
+    private string    _appName = "Passenger.App";
+    private SLRStream _passengerStream;
+    private SLRStream _flightInfoStream;
+
 
     // For generating fake passenger data
     private Faker _faker = new Faker();
 
 
     // Keeping Track of Flights that need to be booked to passengers.
-    private Dictionary<ulong, Flight> _flightsNeedingBooked = new();
+    private ConcurrentQueue<Flight> _flightsNeedingBookedQueue;
 
     // Flights that have completed booking
     private Dictionary<ulong, Flight> _bookedFlights = new();
@@ -44,23 +40,12 @@ public class PassengerEngine : Engine
     /// </summary>
     /// <param name="logger"></param>
     /// <param name="serviceProvider"></param>
-    public PassengerEngine(ILogger<PassengerEngine> logger, IServiceProvider serviceProvider) : base(logger, serviceProvider)
+    public PassengerEngine(ILogger<PassengerEngine> logger, IConfiguration configuration, IServiceProvider serviceProvider) :
+        base(logger, configuration, serviceProvider)
     {
-        _streamPassengerName   = FlightConstants.STREAM_PASSENGER;
-        _streamFlightInfoName  = FlightConstants.STREAM_FLIGHT_INFO;
-        _internalTaskScheduler = new InternalTaskScheduler();
-
-
-        // Set Redis expiration timeout to 10 days.
-        _redisCacheExpireTimeSpan = TimeSpan.FromDays(10);
-
-
-        _passengerProducer  = _mqStreamEngine.GetProducer(_streamPassengerName, _appName);
-        _passengerConsumer  = _mqStreamEngine.GetConsumer(_streamPassengerName, _appName, ReceivePassengerMessages);
-        _flightInfoConsumer = _mqStreamEngine.GetConsumer(_streamFlightInfoName, _appName, ReceiveFlightInfoMessages);
-
-        // Setup Scheduled Tasks
-        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Passenger", AddPassengersToFlights, TimeSpan.FromSeconds(10)));
+        _streamPassengerName       = FlightConstants.STREAM_PASSENGER;
+        _streamFlightInfoName      = FlightConstants.STREAM_FLIGHT_INFO;
+        _flightsNeedingBookedQueue = new();
     }
 
 
@@ -69,11 +54,37 @@ public class PassengerEngine : Engine
     /// Performs initialization logic for the FlightInfo Engine
     /// </summary>
     /// <returns></returns>
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(RedisConfiguration redisStreamConfiguration)
     {
-        await base.InitializeAsync();
+        await base.InitializeAsync(redisStreamConfiguration);
         await GetInitialDataFromRedis();
+
+
+        // Setup FlightInfo Stream
+        SLRStreamConfig config = new()
+        {
+            StreamName = FlightConstants.STREAM_FLIGHT_INFO, ApplicationName = _appName, StreamType = EnumSLRStreamTypes.ConsumerGroupOnly,
+        };
+        _flightInfoStream = await _slrStreamEngine.GetSLRStreamAsync(config);
+        if (_flightInfoStream == null)
+            throw new ApplicationException($"Did not get a good {config.StreamName} stream object.");
+
+
+        // Setup Passenger Stream
+        // Setup FlightInfo Stream
+        SLRStreamConfig passengerConfig = new()
+        {
+            StreamName = FlightConstants.STREAM_PASSENGER, ApplicationName = _appName, StreamType = EnumSLRStreamTypes.ProducerAndConsumerGroup,
+        };
+        _passengerStream = await _slrStreamEngine.GetSLRStreamAsync(passengerConfig);
+        if (_passengerStream == null)
+            throw new ApplicationException($"Did not get a good {config.StreamName} stream object.");
+
+
+        // Setup the non-Streaming Redis Connection.
+        _redisConnectionPoolManager = new(redisStreamConfiguration);
     }
+
 
 
     /// <summary>
@@ -82,10 +93,11 @@ public class PassengerEngine : Engine
     /// <returns></returns>
     public async Task StartEngineAsync()
     {
-        // Create the stream if it does not exist.
-        _passengerProducer.SetStreamLimits(ByteSize.FromMegaBytes(100), ByteSize.FromMegaBytes(10), TimeSpan.FromHours(4));
-
         await base.StartEngineAsync();
+
+        // Setup Scheduled Tasks
+        _internalTaskScheduler.AddTask(new InternalScheduledTask("Add Passenger", AddPassengersToFlights, TimeSpan.FromSeconds(10)));
+        _internalTaskScheduler.AddTask(new InternalScheduledTask("Receive FlightInfo Messages", ReceiveFlightInfoMessages, TimeSpan.FromSeconds(5)));
     }
 
 
@@ -95,20 +107,10 @@ public class PassengerEngine : Engine
     /// <returns></returns>
     public async Task Reset()
     {
-        await _passengerProducer.DeleteStreamFromRabbitMQ();
+        _passengerStream.DeleteStream();
         SetNextPassengerNumber(true);
     }
 
-
-    private async Task ReceivePassengerMessages(Message message)
-    {
-        try { }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
-    }
 
 
     /// <summary>
@@ -128,26 +130,18 @@ public class PassengerEngine : Engine
     /// </summary>
     public ulong FlightNumberOutOfSync { get; protected set; }
 
-    public ulong PassengerCreatedSuccess { get; protected set; }
-    public ulong PassengerCreatedError { get; protected set; }
 
     /// <summary>
-    /// Number of Messages Consumed (Received) from the FlightInfo Stream
+    /// Number of Passengers Created
     /// </summary>
-    public ulong FlightInfoMessagesConsumed
-    {
-        get { return _flightInfoConsumer != null ? _flightInfoConsumer.MessageCounter : 0; }
-    }
+    public ulong StatisticPassengersCreated { get; protected set; }
 
-    public IMqStreamConsumer PassengerConsumer
-    {
-        get { return _passengerConsumer; }
-    }
 
-    public IMqStreamProducer PassengerProducer
-    {
-        get { return _passengerProducer; }
-    }
+    /// <summary>
+    /// Number of Flight Info Messages processed 
+    /// </summary>
+    public ulong StatisticFlightMessagesProcessed { get; protected set; }
+
 
 
     /// <summary>
@@ -161,16 +155,16 @@ public class PassengerEngine : Engine
         {
             // Get Last Received Flight Number
             valueRetrieving = REDIS_RECV_FLIGHT_NUMBER;
-            if (await _redisClient.Db0.ExistsAsync(valueRetrieving))
-                FlightNumberLast = await _redisClient.Db0.GetAsync<ulong>(valueRetrieving);
+            if (await _redisClient.Db1.ExistsAsync(valueRetrieving))
+                FlightNumberLast = await _redisClient.Db1.GetAsync<ulong>(valueRetrieving);
 
             valueRetrieving = REDIS_PSVC_LAST_PASSENGER_ID;
-            if (await _redisClient.Db0.ExistsAsync(valueRetrieving))
-                CurrentPassengerIdNumber = await _redisClient.Db0.GetAsync<ulong>(valueRetrieving);
+            if (await _redisClient.Db1.ExistsAsync(valueRetrieving))
+                CurrentPassengerIdNumber = await _redisClient.Db1.GetAsync<ulong>(valueRetrieving);
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Failed to retrieve Flight Number from Redis DB.  Error: {ex.Message}", ex);
+            _logger.LogError($"Error retrieving a key [{valueRetrieving}] that should exist in redis.  Error - {ex.Message}", ex);
         }
     }
 
@@ -188,7 +182,7 @@ public class PassengerEngine : Engine
         else
             CurrentPassengerIdNumber++;
 
-        await _redisClient.Db0.AddAsync<ulong>(REDIS_PSVC_LAST_PASSENGER_ID, CurrentPassengerIdNumber);
+        await _redisClient.Db1.AddAsync<ulong>(REDIS_PSVC_LAST_PASSENGER_ID, CurrentPassengerIdNumber);
         return CurrentPassengerIdNumber;
     }
 
@@ -199,23 +193,58 @@ public class PassengerEngine : Engine
     /// </summary>
     /// <param name="message"></param>
     /// <returns></returns>
-    private async Task ReceiveFlightInfoMessages(Message message)
+    private async Task<EnumInternalTaskReturn> ReceiveFlightInfoMessages(InternalScheduledTask internalScheduledTask)
     {
         try
         {
-            string eventCategory = message.GetApplicationPropertyAsString(FlightConstants.MQ_EVENT_NAME);
-            if (eventCategory == String.Empty)
+            // Get Flights from FlightInfo
+            StreamEntry[] flightEntries = await _flightInfoStream.ReadStreamGroupAsync();
+            foreach (StreamEntry flightEntry in flightEntries)
             {
-                string msgInfo = message.PrintMessageInfo();
-                _logger.LogError($"Received an empty eventCategory for FlightInfo message.  {msgInfo}");
-                return;
+                SLRMessage message = new(flightEntry);
+                ProcessFlightMessage(message);
+                StatisticFlightMessagesProcessed++;
             }
 
+            return EnumInternalTaskReturn.Success;
+        }
+        catch (Exception e)
+        {
+            return EnumInternalTaskReturn.Failed;
+        }
+    }
+
+
+
+    private async Task<bool> ProcessFlightMessage(SLRMessage message)
+    {
+        try
+        {
+            (bool isValid, string eventCategory) = ValidateEventCategory(message, _flightInfoStream.StreamName);
+            if (!isValid)
+                return true; // Even though invalid we did process the message, so return true.
+
+            // This is only for this sample... To make sure I have not messed something up.
+            if (eventCategory != EventCategories.Flights)
+            {
+                string msgInfo = message.PrintMessageInfo();
+                _logger.LogError($"Received an eventCategory that does not appear to be for FlightInfo message.  {msgInfo}");
+
+                // Return True, even though technically it is an issue,  This should be a testing thing only.
+                return true;
+            }
+
+
+            (isValid, string eventName) = ValidateEventName(message, _flightInfoStream.StreamName);
+            if (!isValid)
+                return true; // Even though invalid, we did process message.
+
+
             // Process the message
-            switch (eventCategory)
+            switch (eventName)
             {
                 case FlightConstants.MQEN_FlightCreated:
-                    Flight flight = message.GetObject<Flight>();
+                    Flight flight = message.GetMessageObject<Flight>();
                     if (flight == null)
                         _logger.LogError($"Received a FlightInfo Message event name of: {eventCategory}. It did not contain any Flight Information and should have.");
                     Console.WriteLine($"Flight Number {flight.FlightId} was created at: {flight.CreatedDateTime}");
@@ -229,7 +258,11 @@ public class PassengerEngine : Engine
 
 
                     FlightNumberLast = flight.FlightId;
-                    await _redisClient.Db0.AddAsync<ulong>(REDIS_RECV_FLIGHT_NUMBER, flight.FlightId);
+
+                    _flightsNeedingBookedQueue.Enqueue(flight);
+
+                    // Store Last received flt number
+                    await _redisClient.Db1.AddAsync<ulong>(REDIS_RECV_FLIGHT_NUMBER, flight.FlightId);
                     break;
                 default:
                     string msgInfo = message.PrintMessageInfo();
@@ -240,9 +273,10 @@ public class PassengerEngine : Engine
         catch (Exception ex)
         {
             _logger.LogError($"Error in receipt of message in ReceiveFlightInfoMessages.  {ex.Message}", ex);
+            return false;
         }
 
-        return;
+        return true;
     }
 
 
@@ -254,17 +288,10 @@ public class PassengerEngine : Engine
     /// <returns></returns>
     private async Task<EnumInternalTaskReturn> AddPassengersToFlights(InternalScheduledTask internalScheduledTask)
     {
-        // If circuit Breaker still tripped, then return without running task.
-        if (CheckCircuitBreaker())
-        {
-            return EnumInternalTaskReturn.NotRunMissingResources;
-        }
-
-
-        if (_flightsNeedingBooked.Count == 0)
+        if (_flightsNeedingBookedQueue.IsEmpty)
             return EnumInternalTaskReturn.NotRunNoData;
 
-        foreach (KeyValuePair<ulong, Flight> flight in _flightsNeedingBooked)
+        while (_flightsNeedingBookedQueue.TryDequeue(out Flight flight))
         {
             // Determine how many passengers to put on plane.  Our planes hold a max of 10 passengers
             int numPassengers = Random.Shared.Next(1, 10);
@@ -274,21 +301,18 @@ public class PassengerEngine : Engine
                 string    passName          = _faker.Person.FullName;
                 ulong     passengerIdNumber = await SetNextPassengerNumber();
                 Passenger passenger         = new(passName, passengerIdNumber);
+                passenger.FlightIds.Add(flight.FlightId);
 
                 // Create Message
-                Message message = _passengerProducer.CreateMessage(passenger);
-                message.AddApplicationProperty(FlightConstants.MQ_EVENT_CATEGORY, EnumMessageEvents.Passenger);
-                message.AddApplicationProperty(FlightConstants.MQ_EVENT_NAME, FlightConstants.MQEN_PassengerBooked);
-                message.AddApplicationProperty(FlightConstants.MQ_EVENT_ID, passenger.Id);
+                SLRMessage message = SLRMessage.CreateMessage<Passenger>(passenger);
+                message.AddProperty(MSG_EVENT_CATEGORY, EventCategories.Passengers);
+                message.AddProperty(MSG_EVENT_NAME, FlightConstants.MQEN_PassengerBooked);
+                message.AddProperty(MSG_EVENT_ID, passenger.Id);
 
-                bool success = await _passengerProducer.SendMessageAsync(message);
-                if (success)
-                    PassengerCreatedSuccess++;
-                else
-                    PassengerCreatedError++;
+                await _passengerStream.SendMessageAsync(message);
+                StatisticPassengersCreated++;
             }
         }
-
 
         return EnumInternalTaskReturn.Success;
     }

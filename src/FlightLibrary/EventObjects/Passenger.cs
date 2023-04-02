@@ -16,7 +16,7 @@ public class Passenger
 
     public string Name { get; private set; }
 
-    public List<ulong> FlightIds { get; set; }
+    public List<ulong> FlightIds { get; set; } = new();
 
     public ulong CurrentFlight { get; set; }
 }
