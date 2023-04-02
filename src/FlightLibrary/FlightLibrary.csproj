@@ -12,7 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
     <PackageReference Include="SlugEnt.InternalTaskScheduler" Version="1.0.8" />
     <PackageReference Include="SlugEnt.MQStreamProcessor" Version="0.6.8" />
-    <PackageReference Include="SlugEnt.SLRStreamProcessing" Version="0.2.5" />
+    <PackageReference Include="SlugEnt.SLRStreamProcessing" Version="0.2.6.1" />
     <PackageReference Include="StackExchange.Redis" Version="2.6.104" />
   </ItemGroup>
 
